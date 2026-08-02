@@ -1,0 +1,842 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<title>Commesse — Team M&E</title>
+<style>
+  .viz-root{
+    color-scheme: light;
+    --surface-1:#ffffff; --surface-2:#f4f5f7; --surface-3:#eceef1;
+    --text-primary:#0b0b0b; --text-secondary:#52514e; --text-muted:#898781;
+    --grid:#e1e0d9; --baseline:#c3c2b7; --border:rgba(11,11,11,0.10);
+    --series-1:#2a78d6; --series-1-fill:rgba(42,120,214,0.12);
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#d03b3b;
+    --tile-commesse:#0b0b0b; --tile-scarichi:#0ca30c; --tile-pianif:#2a78d6; --tile-sforamento:#eda100;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:where(:not([data-theme="light"])) .viz-root{
+      color-scheme: dark;
+      --surface-1:#1a1a19; --surface-2:#0d0d0d; --surface-3:#232322;
+      --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
+      --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,0.10);
+      --series-1:#3987e5; --series-1-fill:rgba(57,135,229,0.16);
+      --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#e66767;
+      --tile-commesse:#ffffff; --tile-scarichi:#0ca30c; --tile-pianif:#3987e5; --tile-sforamento:#c98500;
+    }
+  }
+  :root[data-theme="dark"] .viz-root{
+    color-scheme: dark;
+    --surface-1:#1a1a19; --surface-2:#0d0d0d; --surface-3:#232322;
+    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
+    --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,0.10);
+    --series-1:#3987e5; --series-1-fill:rgba(57,135,229,0.16);
+    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#e66767;
+    --tile-commesse:#ffffff; --tile-scarichi:#0ca30c; --tile-pianif:#3987e5; --tile-sforamento:#c98500;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{ font-family: system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--surface-2); color:var(--text-primary); }
+  .viz-root{ min-height:100vh; }
+  .page{ max-width:1440px; margin:0 auto; padding:22px 26px 60px 26px; }
+
+  .page-header{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:18px; }
+  .page-header h1{ margin:0; font-size:24px; }
+  .page-header .sub{ color:var(--text-secondary); font-size:13px; margin-top:4px; }
+  .header-actions{ display:flex; gap:8px; align-items:center; }
+
+  button.chip{ font: inherit; font-size:12.5px; padding:8px 14px; border-radius:9px; border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary); cursor:pointer; }
+  button.chip:hover{ background:var(--surface-3); }
+  button.chip:disabled{ opacity:.5; cursor:default; }
+  button.chip.active{ background:var(--series-1); color:#fff; border-color:var(--series-1); }
+  button.btn-outline-good{ font:inherit; font-size:13px; font-weight:650; padding:9px 16px; border-radius:9px; border:1.5px solid var(--good); background:transparent; color:var(--good); cursor:pointer; }
+  button.btn-outline-good:hover{ background:color-mix(in srgb, var(--good) 10%, transparent); }
+
+  .tabs{ display:flex; gap:6px; margin-bottom:16px; }
+
+  .stat-grid{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:18px; }
+  .stat-card{ background:var(--surface-1); border:1px solid var(--border); border-radius:10px; padding:14px 18px; border-left:4px solid var(--accent); }
+  .stat-card .label{ font-size:11px; letter-spacing:.03em; color:var(--text-muted); text-transform:uppercase; font-weight:650; }
+  .stat-card .value{ font-size:28px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; }
+  .stat-card .foot{ font-size:12px; color:var(--text-secondary); margin-top:2px; }
+
+  .filters-card{ background:var(--surface-1); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:18px; }
+  .filters-row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+  .filters-row select, .filters-row input[type=text]{
+    font:inherit; font-size:13px; padding:9px 11px; border-radius:8px; border:1px solid var(--border);
+    background:var(--surface-2); color:var(--text-primary);
+  }
+  .filters-row select{ min-width:150px; }
+  .filters-row input[type=text]{ flex:1; min-width:220px; }
+  .filters-row2{ display:flex; gap:10px; align-items:center; margin-top:10px; }
+  label.toggle-chip{ display:inline-flex; align-items:center; gap:7px; font-size:12.5px; padding:8px 12px; border-radius:9px; border:1px solid var(--border); background:var(--surface-2); cursor:pointer; user-select:none; }
+  label.toggle-chip input{ accent-color:var(--series-1); }
+
+  .table-wrap{ background:var(--surface-1); border:1px solid var(--border); border-radius:10px; overflow:auto; }
+  table.grid{ width:100%; border-collapse:collapse; font-size:13px; min-width:1100px; }
+  table.grid thead th{ text-align:left; font-size:10.5px; letter-spacing:.03em; text-transform:uppercase; color:var(--text-muted); font-weight:650; padding:11px 14px; border-bottom:1px solid var(--border); white-space:nowrap; position:sticky; top:0; background:var(--surface-1); cursor:pointer; }
+  table.grid tbody td{ padding:11px 14px; border-bottom:1px solid var(--grid); vertical-align:middle; }
+  table.grid tbody tr:hover{ background:var(--surface-3); }
+  table.grid tbody tr:last-child td{ border-bottom:none; }
+  .cell-commessa .code{ font-weight:700; color:var(--series-1); cursor:pointer; }
+  .cell-commessa .code:hover{ text-decoration:underline; }
+  .cell-commessa .desc{ font-size:11.5px; color:var(--text-secondary); margin-top:2px; max-width:280px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  td.num{ font-variant-numeric:tabular-nums; text-align:right; }
+  .badge{ font-size:10.5px; font-weight:650; padding:3px 9px; border-radius:20px; display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+  .badge-division{ background:var(--surface-3); color:var(--text-secondary); }
+  .badge-good{ color:#fff; background:var(--good); }
+  .badge-neutral{ color:var(--text-secondary); background:var(--surface-3); border:1px solid var(--border); }
+  .badge-critical{ color:#fff; background:var(--critical); }
+  .avanz-cell{ display:flex; align-items:center; gap:8px; min-width:140px; }
+  .avanz-track{ flex:1; height:7px; border-radius:4px; background:var(--grid); overflow:hidden; }
+  .avanz-fill{ height:100%; border-radius:4px; }
+  .avanz-pct{ font-size:12px; font-weight:650; min-width:34px; text-align:right; font-variant-numeric:tabular-nums; }
+  .btn-detail{ font:inherit; font-size:12px; font-weight:650; padding:6px 12px; border-radius:8px; border:1.5px solid var(--series-1); background:transparent; color:var(--series-1); cursor:pointer; white-space:nowrap; }
+  .btn-detail:hover{ background:var(--series-1-fill); }
+  .empty-row td{ text-align:center; color:var(--text-muted); padding:40px 0; }
+
+  /* modal */
+  .modal-overlay{ position:fixed; inset:0; background:rgba(11,11,11,0.5); display:none; align-items:flex-start; justify-content:center; padding:40px 20px; overflow-y:auto; z-index:50; }
+  .modal-overlay.open{ display:flex; }
+  .modal{ background:var(--surface-1); border-radius:14px; max-width:920px; width:100%; padding:24px; position:relative; box-shadow:0 20px 60px rgba(0,0,0,0.3); }
+  .modal-close{ position:absolute; top:16px; right:16px; font:inherit; font-size:13px; padding:6px 10px; border-radius:8px; border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary); cursor:pointer; }
+  #modalOverlay2{ z-index:60; }
+  .modal-sm{ max-width:560px; }
+  .drill-header{ display:flex; justify-content:space-between; align-items:center; gap:12px; padding-right:36px; margin-bottom:2px; }
+  .drill-header h3{ margin:0; font-size:16px; }
+  .drill-sub{ font-size:12px; color:var(--text-secondary); margin-bottom:16px; }
+  .drill-month-row{ margin-bottom:12px; }
+  .drill-month-top{ display:flex; align-items:center; gap:10px; }
+  .drill-month-label{ font-size:13px; font-weight:600; min-width:56px; }
+  .drill-month-track{ flex:1; height:9px; border-radius:5px; background:var(--grid); overflow:hidden; }
+  .drill-month-fill{ height:100%; border-radius:5px; background:var(--good); }
+  .drill-month-value{ font-size:13px; font-weight:650; min-width:44px; text-align:right; font-variant-numeric:tabular-nums; }
+  .btn-mini-detail{ font:inherit; font-size:11.5px; font-weight:600; padding:5px 10px; border-radius:7px; border:1px solid var(--border); background:var(--surface-2); color:var(--text-primary); cursor:pointer; white-space:nowrap; }
+  .btn-mini-detail:hover{ background:var(--surface-3); }
+  .drill-entries{ margin:8px 0 0 66px; border-left:2px solid var(--grid); padding-left:12px; display:none; }
+  .drill-entries.open{ display:block; }
+  .drill-entry{ font-size:11.5px; color:var(--text-secondary); padding:4px 0; border-bottom:1px solid var(--grid); }
+  .drill-entry:last-child{ border-bottom:none; }
+  .drill-entry .de-date{ font-weight:650; color:var(--text-primary); margin-right:8px; font-variant-numeric:tabular-nums; }
+  .drill-entry .de-ore{ font-variant-numeric:tabular-nums; margin-right:8px; }
+  .drill-entry .de-nota{ color:var(--text-muted); }
+  button.ore-drill{ font:inherit; font-size:12.5px; font-weight:650; font-variant-numeric:tabular-nums; color:var(--series-1); background:none; border:none; padding:0; cursor:pointer; }
+  button.ore-drill:hover{ text-decoration:underline; }
+  .drill-total{ display:flex; justify-content:space-between; margin-top:16px; padding-top:14px; border-top:1px solid var(--border); font-size:13.5px; font-weight:650; }
+  .drill-total .value{ font-variant-numeric:tabular-nums; }
+  .detail-header{ display:flex; justify-content:space-between; align-items:flex-start; gap:16px; flex-wrap:wrap; margin-bottom:6px; padding-right:70px;}
+  .detail-header h2{ margin:0; font-size:19px; }
+  .detail-header .code{ color:var(--series-1); font-weight:700; }
+  .detail-header .manager{ font-size:12.5px; color:var(--text-secondary); margin-top:4px; }
+  .detail-stats{ display:flex; gap:22px; flex-wrap:wrap; margin:14px 0 18px 0; }
+  .detail-stats .dstat .label{ font-size:11px; color:var(--text-muted); text-transform:uppercase; }
+  .detail-stats .dstat .value{ font-size:18px; font-weight:650; font-variant-numeric:tabular-nums; }
+  .chart-card{ background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:16px; margin-bottom:18px; }
+  .chart-card h3{ margin:0 0 4px 0; font-size:13px; color:var(--text-secondary); font-weight:600; }
+  .chart-wrap{ position:relative; }
+  svg.chart{ width:100%; height:260px; display:block; overflow:visible; }
+  .grid-line{ stroke:var(--grid); stroke-width:1; }
+  .axis-line{ stroke:var(--baseline); stroke-width:1; }
+  .axis-label{ fill:var(--text-muted); font-size:10.5px; }
+  .line-path{ fill:none; stroke:var(--series-1); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .area-path{ fill:var(--series-1-fill); stroke:none; }
+  .end-dot{ fill:var(--series-1); stroke:var(--surface-1); stroke-width:2; }
+  .threshold-line{ stroke:var(--critical); stroke-width:1.5; stroke-dasharray:4 3; }
+  .threshold-label{ fill:var(--critical); font-size:10.5px; font-weight:650; }
+  .crosshair-line{ stroke:var(--text-secondary); stroke-width:1; stroke-dasharray:2 2; opacity:0; }
+  .hover-dot{ fill:var(--series-1); stroke:var(--surface-1); stroke-width:2; opacity:0; }
+  .hit-rect{ fill:transparent; cursor:crosshair; }
+  .tooltip{ position:absolute; pointer-events:none; background:var(--surface-1); border:1px solid var(--border); border-radius:8px; padding:7px 10px; font-size:11.5px; box-shadow:0 4px 14px rgba(0,0,0,0.14); opacity:0; transform:translate(-50%,-110%); transition:opacity .08s; white-space:nowrap; z-index:5; }
+  .tooltip .t-date{ color:var(--text-muted); margin-bottom:2px; }
+  .tooltip .t-val{ font-weight:650; font-variant-numeric:tabular-nums; }
+  .people-card{ background:var(--surface-2); border:1px solid var(--border); border-radius:12px; padding:16px; }
+  .people-card h3{ margin:0 0 4px 0; font-size:13px; color:var(--text-secondary); font-weight:600; }
+  .people-card .hint{ font-size:11px; color:var(--text-muted); margin-bottom:10px; }
+  table.people-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  table.people-table th{ text-align:left; font-size:11px; text-transform:uppercase; color:var(--text-muted); font-weight:600; padding:6px 8px; border-bottom:1px solid var(--border); }
+  table.people-table td{ padding:6px 8px; border-bottom:1px solid var(--grid); font-variant-numeric:tabular-nums; }
+  table.people-table tr:last-child td{ border-bottom:none; }
+  .mini-bar-track{ height:6px; border-radius:3px; background:var(--grid); width:100%; overflow:hidden; margin-top:3px; }
+  .mini-bar-fill{ height:100%; border-radius:3px; }
+  .unresolved-tag{ font-size:10px; color:var(--text-muted); font-style:italic; }
+  .empty-state{ color:var(--text-muted); font-size:13px; padding:30px 0; text-align:center; }
+  .pianif-pending{ font-size:11px; color:var(--text-muted); font-style:italic; }
+
+  ::-webkit-scrollbar{ width:10px; height:10px; }
+  ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:5px; }
+
+  @media (max-width: 900px){
+    .stat-grid{ grid-template-columns:repeat(2,1fr); }
+  }
+
+  .pw-gate{ position:fixed; inset:0; z-index:100; display:flex; align-items:center; justify-content:center; background:#0d0d0d; padding:20px; }
+  .pw-card{ background:#1a1a19; border:1px solid rgba(255,255,255,0.12); border-radius:14px; padding:28px 32px; width:100%; max-width:340px; box-shadow:0 20px 60px rgba(0,0,0,0.4); font-family:system-ui,-apple-system,"Segoe UI",sans-serif; }
+  .pw-title{ color:#fff; font-size:15px; font-weight:650; margin-bottom:4px; }
+  .pw-sub{ color:#c3c2b7; font-size:12.5px; margin-bottom:18px; }
+  .pw-card input{ width:100%; font:inherit; font-size:14px; padding:10px 12px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); background:#0d0d0d; color:#fff; box-sizing:border-box; }
+  .pw-error{ color:#e66767; font-size:12px; margin-top:8px; min-height:16px; }
+  .pw-card button{ margin-top:10px; width:100%; font:inherit; font-size:13.5px; font-weight:650; padding:10px; border-radius:8px; border:none; background:#3987e5; color:#fff; cursor:pointer; }
+  .pw-card button:disabled{ opacity:.6; cursor:default; }
+</style>
+</head>
+<body>
+<div id="pwGate" class="pw-gate">
+  <form id="pwForm" class="pw-card">
+    <div class="pw-title">Commesse — Team M&amp;E</div>
+    <div class="pw-sub">Contenuto cifrato. Inserisci la password per sbloccare.</div>
+    <input type="password" id="pwInput" autocomplete="current-password" placeholder="Password" required>
+    <div id="pwError" class="pw-error"></div>
+    <button type="submit" id="pwSubmit">Sblocca</button>
+  </form>
+</div>
+<div class="viz-root" id="vizRoot" data-theme="" style="display:none;">
+<div class="page">
+
+  <div class="page-header">
+    <div>
+      <h1 id="pageTitle">Commesse</h1>
+      <div class="sub" id="pageSub">Avanzamento ore per commessa · scarichi + pianificato vs budget</div>
+      <div class="sub" id="pianifStatus" style="margin-top:2px;"></div>
+    </div>
+    <div class="header-actions">
+      <button class="chip" id="refreshPianif">🔄 Aggiorna pianificato</button>
+      <button class="chip" id="themeToggle">🌓 Tema</button>
+      <button class="btn-outline-good" id="exportCsv">Esporta CSV</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <button class="chip active" id="tabJsb">Commesse JSB</button>
+    <button class="chip" id="tabBwv">Attività BWV</button>
+  </div>
+
+  <div id="jsbView">
+    <div class="stat-grid" id="statGrid"></div>
+
+    <div class="filters-card">
+      <div class="filters-row">
+        <select id="fDivisione"></select>
+        <select id="fPm"></select>
+        <select id="fStato">
+          <option value="tutte">Stato: tutte</option>
+          <option value="Aperta">Aperta</option>
+          <option value="Chiusa">Chiusa</option>
+        </select>
+        <select id="fSforamento">
+          <option value="tutte">Pianif.: tutte</option>
+          <option value="sforamento">Solo in sforamento</option>
+          <option value="entro">Solo entro budget</option>
+        </select>
+        <input type="text" id="searchBox" placeholder="Cerca codice, nome, cliente, PM…">
+      </div>
+      <div class="filters-row2">
+        <label class="toggle-chip"><input type="checkbox" id="hideClosed"> Nascondi chiuse</label>
+        <button class="chip" id="applyFilters">Filtra</button>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="grid" id="jsbTable">
+        <thead><tr>
+          <th data-key="code">Commessa</th>
+          <th data-key="cliente">Cliente</th>
+          <th data-key="manager">PM</th>
+          <th data-key="divisione">Divisione</th>
+          <th data-key="monte_ore" style="text-align:right;">Budget</th>
+          <th data-key="ore_consuntivate" style="text-align:right;">Scarichi</th>
+          <th data-key="pianificato" style="text-align:right;">Pianif.</th>
+          <th data-key="totale" style="text-align:right;">Totale</th>
+          <th data-key="pct">Avanzamento</th>
+          <th data-key="_stato">Stato</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="jsbBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div id="bwvView" style="display:none;">
+    <div class="filters-card">
+      <div class="filters-row">
+        <input type="text" id="bwvSearch" placeholder="Cerca codice o descrizione attività…">
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="grid" id="bwvTable">
+        <thead><tr>
+          <th data-key="code">Codice</th>
+          <th data-key="descrizione">Descrizione</th>
+          <th data-key="ore_consuntivate" style="text-align:right;">Ore consuntivate</th>
+          <th data-key="n_risorse_reali" style="text-align:right;">N. risorse</th>
+          <th data-key="ultima_data">Ultima registrazione</th>
+          <th></th>
+        </tr></thead>
+        <tbody id="bwvBody"></tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <button class="modal-close" id="modalClose">✕ Chiudi</button>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay2">
+  <div class="modal modal-sm">
+    <button class="modal-close" id="modalClose2">✕</button>
+    <div id="modal2Content"></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function renderDashboard(DATA){
+  const root = document.querySelector('.viz-root');
+  const fmt = n => (n===null||n===undefined) ? '—' : n.toLocaleString('it-IT', {maximumFractionDigits:1});
+  const fmtDate = s => { if(!s) return '—'; const d=new Date(s); return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}); };
+
+  DATA.jsb.forEach(r=>{ r.tipo='JSB'; });
+  DATA.bwv.forEach(r=>{ r.tipo='BWV'; });
+
+  // ---------- pianificato: fetch live dal Google Sheet pubblicato ----------
+  // Il gsheet contiene GIORNI (da 8h ciascuno) pianificati per persona/commessa/mese, colonne GEN..DIC.
+  // "Pianificato" = giorni x8, sommati dal mese corrente (compreso) a dicembre, per non sovrapporsi
+  // alle ore gia' consuntivate (Scarichi) dei mesi passati. Se il fetch fallisce (offline, link
+  // cambiato) resta l'istantanea incorporata nel file al momento della generazione (vedi meta.generato_il).
+  const MONTHS = ['GEN','FEB','MAR','APR','MAG','GIU','LUG','AGO','SET','OTT','NOV','DIC'];
+  const GSHEET_CSV_URL = DATA.meta.gsheet_csv_url;
+
+  function parseCsv(text){
+    const rows = []; let row = [], field = '', inQuotes = false;
+    for(let i=0;i<text.length;i++){
+      const c = text[i];
+      if(inQuotes){
+        if(c === '"'){ if(text[i+1] === '"'){ field += '"'; i++; } else inQuotes = false; }
+        else field += c;
+      } else {
+        if(c === '"') inQuotes = true;
+        else if(c === ','){ row.push(field); field=''; }
+        else if(c === '\n'){ row.push(field); rows.push(row); row=[]; field=''; }
+        else if(c === '\r'){ /* ignora */ }
+        else field += c;
+      }
+    }
+    if(field.length || row.length){ row.push(field); rows.push(row); }
+    return rows.filter(r => r.length>1 || r[0]);
+  }
+  const toNum = s => { const v = parseFloat(String(s||'').trim().replace(',', '.')); return isNaN(v) ? 0 : v; };
+  const normName = s => s.toLowerCase().replace(/\s+/g,' ').trim();
+  const MONTH_LABELS_IT = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
+  function futurePeriodLabel(){
+    const now = new Date();
+    const fromMonth = now.getFullYear()===DATA.meta.anno_corrente ? now.getMonth() : 0;
+    return MONTH_LABELS_IT[fromMonth]+'–dic';
+  }
+  function scarichiPeriodLabel(rec){
+    if(!rec.prima_data || !rec.ultima_data) return 'n/d';
+    const d0 = new Date(rec.prima_data), d1 = new Date(rec.ultima_data);
+    const lbl = d => MONTH_LABELS_IT[d.getMonth()]+'-'+String(d.getFullYear()).slice(2);
+    const l0 = lbl(d0), l1 = lbl(d1);
+    return l0===l1 ? l0 : l0+'–'+l1;
+  }
+
+  async function fetchLivePianificato(){
+    const statusEl = document.getElementById('pianifStatus');
+    statusEl.textContent = 'Aggiornamento pianificato dal Google Sheet…';
+    try{
+      const resp = await fetch(GSHEET_CSV_URL, { cache: 'no-store' });
+      if(!resp.ok) throw new Error('HTTP '+resp.status);
+      const text = await resp.text();
+      const rows = parseCsv(text);
+      const header = rows[0];
+      const idxRisorsa = header.indexOf('Risorsa');
+      const idxCommessa = header.indexOf('Commessa');
+      const monthCol = MONTHS.map(m => header.indexOf(m));
+      if(idxRisorsa<0 || idxCommessa<0 || monthCol.some(i=>i<0)) throw new Error('formato foglio inatteso');
+
+      const now = new Date();
+      const fromMonth = now.getFullYear()===DATA.meta.anno_corrente ? now.getMonth() : 0;
+      const jsbCodes = new Set(DATA.jsb.map(r=>r.code));
+      const byCommessa = {}, byCommessaPersona = {};
+
+      for(let i=1;i<rows.length;i++){
+        const r = rows[i];
+        const commessaRaw = r[idxCommessa] || '';
+        const m = commessaRaw.match(/^(JSB\d+)/);
+        if(!m || !jsbCodes.has(m[1])) continue;
+        const code = m[1];
+        let futureDays = 0;
+        for(let mi=fromMonth; mi<12; mi++) futureDays += toNum(r[monthCol[mi]]);
+        const futureHours = futureDays * 8;
+        if(futureHours===0) continue;
+        let full = (r[idxRisorsa]||'').trim();
+        if(full.includes(',')){ const [cog,nome] = full.split(','); full = (nome||'').trim()+' '+(cog||'').trim(); }
+        const norm = normName(full);
+        byCommessa[code] = (byCommessa[code]||0) + futureHours;
+        const key = code+'||'+norm;
+        byCommessaPersona[key] = (byCommessaPersona[key]||0) + futureHours;
+      }
+
+      DATA.jsb.forEach(rec=>{
+        const p = Math.round((byCommessa[rec.code]||0)*100)/100;
+        rec.pianificato = p;
+        rec.totale = Math.round((rec.ore_consuntivate + p)*100)/100;
+        rec.pct = rec.monte_ore>0 ? Math.round(rec.totale/rec.monte_ore*1000)/10 : null;
+        rec.per_persona.forEach(pp=>{
+          const key = rec.code+'||'+normName(pp.nome);
+          pp.ore_pianificate = Math.round((byCommessaPersona[key]||0)*100)/100;
+        });
+      });
+      DATA.meta.totale_pianificato = Math.round(DATA.jsb.reduce((a,r)=>a+r.pianificato,0)*100)/100;
+
+      const hh = String(now.getHours()).padStart(2,'0'), mm = String(now.getMinutes()).padStart(2,'0');
+      statusEl.textContent = `Pianificato: dati live dal Google Sheet (aggiornato alle ${hh}:${mm})`;
+      return true;
+    }catch(e){
+      console.warn('Fetch pianificato live fallito, uso istantanea incorporata:', e);
+      statusEl.textContent = `Pianificato: impossibile contattare il Google Sheet — uso l'istantanea del ${DATA.meta.generato_il} incorporata nel file`;
+      return false;
+    }
+  }
+
+  let filters = { divisione:'tutte', pm:'tutti', stato:'tutte', sforamento:'tutte', search:'', hideClosed:false };
+  let currentTab = 'jsb';
+
+  // ---------- stat tiles ----------
+  function renderStats(){
+    const totCommesse = DATA.jsb.length;
+    const aperte = DATA.jsb.filter(r=>r.stato==='Aperta').length;
+    const sforamento = DATA.jsb.filter(r=>r.pct!==null && r.pct>=100).length;
+    const tiles = [
+      ['commesse','COMMESSE', totCommesse, aperte+' aperte'],
+      ['scarichi','SCARICHI YTD', fmt(DATA.meta.totale_ore_ytd), 'ore lavorate nel '+DATA.meta.anno_corrente],
+      ['pianif','PIANIFICATO', fmt(DATA.meta.totale_pianificato), 'ore future pianificate ('+futurePeriodLabel()+')'],
+      ['sforamento','IN SFORAMENTO', sforamento, 'commesse ≥ 100% budget'],
+    ];
+    document.getElementById('statGrid').innerHTML = tiles.map(([cls,l,v,f])=>
+      `<div class="stat-card" style="--accent:var(--tile-${cls});"><div class="label">${l}</div><div class="value">${v}</div><div class="foot">${f}</div></div>`
+    ).join('');
+  }
+
+  // ---------- filtri select population ----------
+  function populateFilters(){
+    const divSel = document.getElementById('fDivisione');
+    const divs = ['tutte', ...new Set(DATA.jsb.map(r=>r.divisione))];
+    divSel.innerHTML = divs.map(d=>`<option value="${d}">${d==='tutte'?'Divisione: tutte':d}</option>`).join('');
+
+    const pmSel = document.getElementById('fPm');
+    const pms = ['tutti', ...DATA.meta.pm_list];
+    pmSel.innerHTML = pms.map(p=>`<option value="${p}">${p==='tutti'?'PM: tutti':p}</option>`).join('');
+  }
+
+  function statusOf(pct){
+    if(pct===null || pct===undefined) return 'neutral';
+    if(pct>=100) return 'critical';
+    return 'good';
+  }
+
+  function matchesFilters(r){
+    if(filters.divisione!=='tutte' && r.divisione!==filters.divisione) return false;
+    if(filters.pm!=='tutti' && r.manager!==filters.pm) return false;
+    const st = r.stato;
+    if(filters.stato!=='tutte' && st!==filters.stato) return false;
+    if(filters.hideClosed && st==='Chiusa') return false;
+    if(filters.sforamento==='sforamento' && !(r.pct!==null && r.pct>=100)) return false;
+    if(filters.sforamento==='entro' && (r.pct!==null && r.pct>=100)) return false;
+    const q = filters.search.trim().toLowerCase();
+    if(q){
+      const hay = (r.code+' '+r.descrizione+' '+(r.cliente||'')+' '+(r.manager||'')).toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  }
+
+  let jsbSortKey='code', jsbSortDir=1;
+  function renderJsbTable(){
+    const rows = DATA.jsb.filter(matchesFilters).slice().sort((a,b)=>{
+      let va = jsbSortKey==='_stato' ? a.stato : a[jsbSortKey];
+      let vb = jsbSortKey==='_stato' ? b.stato : b[jsbSortKey];
+      if(va===null||va===undefined) va = (typeof vb==='number')? -1:'';
+      if(vb===null||vb===undefined) vb = (typeof va==='number')? -1:'';
+      if(typeof va==='number') return (va-vb)*jsbSortDir;
+      return String(va).localeCompare(String(vb))*jsbSortDir;
+    });
+    const tbody = document.getElementById('jsbBody');
+    if(!rows.length){ tbody.innerHTML = '<tr class="empty-row"><td colspan="11">Nessuna commessa corrisponde ai filtri.</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r=>{
+      const st = r.stato;
+      const pct = r.pct;
+      const stClass = statusOf(pct);
+      const barColor = stClass==='critical' ? 'var(--critical)' : stClass==='good' ? 'var(--good)' : 'var(--baseline)';
+      const barWidth = pct===null ? 0 : Math.min(100,pct);
+      const pctLabel = pct===null ? 'n/d' : fmt(pct)+'%';
+      const statoBadgeClass = st==='Aperta' ? 'badge-good' : 'badge-neutral';
+      return `<tr>
+        <td class="cell-commessa"><div class="code" data-code="${r.code}">${r.code}</div><div class="desc">${r.descrizione||'—'}</div></td>
+        <td>${r.cliente||'—'}</td>
+        <td>${r.manager||'—'}</td>
+        <td><span class="badge badge-division">${r.divisione}</span></td>
+        <td class="num">${fmt(r.monte_ore)}</td>
+        <td class="num">${fmt(r.ore_consuntivate)}</td>
+        <td class="num">${fmt(r.pianificato)}</td>
+        <td class="num"><strong>${fmt(r.totale)}</strong></td>
+        <td><div class="avanz-cell"><div class="avanz-track"><div class="avanz-fill" style="width:${barWidth}%;background:${barColor};"></div></div><div class="avanz-pct">${pctLabel}</div></div></td>
+        <td><span class="badge ${statoBadgeClass}">${st}</span></td>
+        <td><button class="btn-detail" data-code="${r.code}">Dettaglio →</button></td>
+      </tr>`;
+    }).join('');
+
+    tbody.querySelectorAll('.code, .btn-detail').forEach(el=>{
+      el.addEventListener('click', ()=> openDetail('jsb', el.dataset.code));
+    });
+  }
+
+  document.querySelectorAll('#jsbTable thead th[data-key]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const key = th.dataset.key;
+      jsbSortDir = (jsbSortKey===key) ? -jsbSortDir : 1; jsbSortKey = key;
+      renderJsbTable();
+    });
+  });
+
+  function applyFiltersFromUI(){
+    filters.divisione = document.getElementById('fDivisione').value;
+    filters.pm = document.getElementById('fPm').value;
+    filters.stato = document.getElementById('fStato').value;
+    filters.sforamento = document.getElementById('fSforamento').value;
+    filters.search = document.getElementById('searchBox').value;
+    filters.hideClosed = document.getElementById('hideClosed').checked;
+    renderJsbTable();
+  }
+  ['fDivisione','fPm','fStato','fSforamento'].forEach(id=>{
+    document.getElementById(id).addEventListener('change', applyFiltersFromUI);
+  });
+  document.getElementById('searchBox').addEventListener('input', applyFiltersFromUI);
+  document.getElementById('hideClosed').addEventListener('change', applyFiltersFromUI);
+  document.getElementById('applyFilters').addEventListener('click', applyFiltersFromUI);
+
+  // ---------- BWV table ----------
+  let bwvSearch = '';
+  function renderBwvTable(){
+    const q = bwvSearch.trim().toLowerCase();
+    const rows = DATA.bwv.filter(r => !q || (r.code+' '+r.descrizione).toLowerCase().includes(q));
+    const tbody = document.getElementById('bwvBody');
+    if(!rows.length){ tbody.innerHTML = '<tr class="empty-row"><td colspan="6">Nessun risultato.</td></tr>'; return; }
+    tbody.innerHTML = rows.map(r=>`<tr>
+      <td><strong>${r.code}</strong></td>
+      <td>${r.descrizione||'—'}</td>
+      <td class="num">${fmt(r.ore_consuntivate)}</td>
+      <td class="num">${r.n_risorse_reali}</td>
+      <td>${fmtDate(r.ultima_data)}</td>
+      <td><button class="btn-detail" data-code="${r.code}">Dettaglio →</button></td>
+    </tr>`).join('');
+    tbody.querySelectorAll('.btn-detail').forEach(el=>{
+      el.addEventListener('click', ()=> openDetail('bwv', el.dataset.code));
+    });
+  }
+  document.getElementById('bwvSearch').addEventListener('input', (e)=>{ bwvSearch = e.target.value; renderBwvTable(); });
+
+  // ---------- tabs ----------
+  document.getElementById('tabJsb').addEventListener('click', ()=>{
+    currentTab='jsb';
+    document.getElementById('tabJsb').classList.add('active');
+    document.getElementById('tabBwv').classList.remove('active');
+    document.getElementById('jsbView').style.display='';
+    document.getElementById('bwvView').style.display='none';
+  });
+  document.getElementById('tabBwv').addEventListener('click', ()=>{
+    currentTab='bwv';
+    document.getElementById('tabBwv').classList.add('active');
+    document.getElementById('tabJsb').classList.remove('active');
+    document.getElementById('jsbView').style.display='none';
+    document.getElementById('bwvView').style.display='';
+  });
+
+  document.getElementById('themeToggle').addEventListener('click', ()=>{
+    const cur = root.getAttribute('data-theme');
+    root.setAttribute('data-theme', cur==='dark' ? 'light' : 'dark');
+  });
+
+  // ---------- CSV export ----------
+  function csvEscape(v){ const s=String(v??''); return /[",\n;]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
+  document.getElementById('exportCsv').addEventListener('click', ()=>{
+    const rows = DATA.jsb.filter(matchesFilters);
+    const header = ['Commessa','Descrizione','Cliente','PM','Divisione','Budget','Scarichi','Pianificato','Totale','Avanzamento %','Stato'];
+    const lines = [header.join(';')];
+    rows.forEach(r=>{
+      lines.push([r.code, r.descrizione, r.cliente, r.manager, r.divisione, r.monte_ore, r.ore_consuntivate, r.pianificato, r.totale, r.pct??'', r.stato].map(csvEscape).join(';'));
+    });
+    const blob = new Blob(['﻿'+lines.join('\n')], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'commesse_export.csv';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  // ---------- chart (riuso) ----------
+  function buildChart(container, serie, monteOre){
+    container.innerHTML = '';
+    if(!serie.length){ container.innerHTML = '<div class="empty-state">Nessuna ora registrata per questa voce.</div>'; return; }
+    const W = 860, H = 260, padL = 46, padR = 20, padT = 18, padB = 28;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.setAttribute('class','chart');
+    svg.setAttribute('preserveAspectRatio','none');
+
+    const dates = serie.map(d=>new Date(d.d).getTime());
+    const xMin = dates[0], xMax = dates[dates.length-1];
+    const xSpan = Math.max(1, xMax - xMin);
+    const yMax = Math.max(serie[serie.length-1].c, monteOre||0) * 1.12 || 1;
+    const xScale = t => padL + (t - xMin)/xSpan * (W-padL-padR);
+    const yScale = v => H - padB - (v/yMax) * (H-padT-padB);
+
+    const gridsG = document.createElementNS(svg.namespaceURI,'g');
+    for(let i=0;i<=4;i++){
+      const v = yMax/4*i, y = yScale(v);
+      const line = document.createElementNS(svg.namespaceURI,'line');
+      line.setAttribute('x1',padL); line.setAttribute('x2',W-padR); line.setAttribute('y1',y); line.setAttribute('y2',y); line.setAttribute('class','grid-line');
+      gridsG.appendChild(line);
+      const lbl = document.createElementNS(svg.namespaceURI,'text');
+      lbl.setAttribute('x', padL-8); lbl.setAttribute('y', y+3); lbl.setAttribute('text-anchor','end'); lbl.setAttribute('class','axis-label');
+      lbl.textContent = Math.round(v); gridsG.appendChild(lbl);
+    }
+    svg.appendChild(gridsG);
+
+    const axisG = document.createElementNS(svg.namespaceURI,'g');
+    const baseline = document.createElementNS(svg.namespaceURI,'line');
+    baseline.setAttribute('x1',padL); baseline.setAttribute('x2',W-padR); baseline.setAttribute('y1',H-padB); baseline.setAttribute('y2',H-padB); baseline.setAttribute('class','axis-line');
+    axisG.appendChild(baseline);
+    [0, serie.length-1].forEach((idx,i)=>{
+      const lbl = document.createElementNS(svg.namespaceURI,'text');
+      lbl.setAttribute('x', xScale(dates[idx])); lbl.setAttribute('y', H-8);
+      lbl.setAttribute('text-anchor', i===0?'start':'end'); lbl.setAttribute('class','axis-label');
+      lbl.textContent = fmtDate(serie[idx].d); axisG.appendChild(lbl);
+    });
+    svg.appendChild(axisG);
+
+    if(monteOre){
+      const ty = yScale(monteOre);
+      const tline = document.createElementNS(svg.namespaceURI,'line');
+      tline.setAttribute('x1',padL); tline.setAttribute('x2',W-padR); tline.setAttribute('y1',ty); tline.setAttribute('y2',ty); tline.setAttribute('class','threshold-line');
+      svg.appendChild(tline);
+      const tlabel = document.createElementNS(svg.namespaceURI,'text');
+      tlabel.setAttribute('x', W-padR); tlabel.setAttribute('y', ty-6); tlabel.setAttribute('text-anchor','end'); tlabel.setAttribute('class','threshold-label');
+      tlabel.textContent = `Monte ore: ${fmt(monteOre)}h`; svg.appendChild(tlabel);
+    }
+
+    let dPath = '';
+    serie.forEach((pt,i)=>{ const x = xScale(dates[i]), y = yScale(pt.c); dPath += (i===0?'M':'L') + x.toFixed(2) + ' ' + y.toFixed(2) + ' '; });
+    const aPath = dPath + `L ${xScale(xMax).toFixed(2)} ${yScale(0).toFixed(2)} L ${xScale(xMin).toFixed(2)} ${yScale(0).toFixed(2)} Z`;
+    const area = document.createElementNS(svg.namespaceURI,'path'); area.setAttribute('d', aPath); area.setAttribute('class','area-path'); svg.appendChild(area);
+    const line = document.createElementNS(svg.namespaceURI,'path'); line.setAttribute('d', dPath); line.setAttribute('class','line-path'); svg.appendChild(line);
+
+    const last = serie[serie.length-1];
+    const endDot = document.createElementNS(svg.namespaceURI,'circle');
+    endDot.setAttribute('cx', xScale(xMax)); endDot.setAttribute('cy', yScale(last.c)); endDot.setAttribute('r', 4); endDot.setAttribute('class','end-dot');
+    svg.appendChild(endDot);
+
+    const crosshair = document.createElementNS(svg.namespaceURI,'line');
+    crosshair.setAttribute('y1',padT); crosshair.setAttribute('y2',H-padB); crosshair.setAttribute('class','crosshair-line'); svg.appendChild(crosshair);
+    const hoverDot = document.createElementNS(svg.namespaceURI,'circle'); hoverDot.setAttribute('r',5); hoverDot.setAttribute('class','hover-dot'); svg.appendChild(hoverDot);
+    const hit = document.createElementNS(svg.namespaceURI,'rect');
+    hit.setAttribute('x',padL); hit.setAttribute('y',padT); hit.setAttribute('width', W-padL-padR); hit.setAttribute('height', H-padT-padB); hit.setAttribute('class','hit-rect');
+    svg.appendChild(hit);
+
+    container.style.position='relative';
+    container.appendChild(svg);
+    const tooltip = document.createElement('div'); tooltip.className='tooltip';
+    tooltip.innerHTML = `<div class="t-date"></div><div class="t-val"></div>`;
+    container.appendChild(tooltip);
+
+    function findNearest(px){
+      const targetT = xMin + (px-padL)/(W-padL-padR)*xSpan;
+      let best=0, bestDist=Infinity;
+      for(let i=0;i<dates.length;i++){ const dist = Math.abs(dates[i]-targetT); if(dist<bestDist){ bestDist=dist; best=i; } }
+      return best;
+    }
+    hit.addEventListener('mousemove', (ev)=>{
+      const rect = svg.getBoundingClientRect();
+      const px = (ev.clientX-rect.left)/rect.width*W;
+      const idx = findNearest(px);
+      const pt = serie[idx];
+      const x = xScale(dates[idx]), y = yScale(pt.c);
+      crosshair.setAttribute('x1',x); crosshair.setAttribute('x2',x); crosshair.style.opacity=1;
+      hoverDot.setAttribute('cx',x); hoverDot.setAttribute('cy',y); hoverDot.style.opacity=1;
+      tooltip.style.opacity=1; tooltip.style.left = (x/W*rect.width)+'px'; tooltip.style.top = (y/H*rect.height)+'px';
+      tooltip.querySelector('.t-date').textContent = fmtDate(pt.d);
+      tooltip.querySelector('.t-val').textContent = `${fmt(pt.c)}h cumulate (+${fmt(pt.h)}h quel giorno)`;
+    });
+    hit.addEventListener('mouseleave', ()=>{ crosshair.style.opacity=0; hoverDot.style.opacity=0; tooltip.style.opacity=0; });
+  }
+
+  function openDetail(group, code){
+    const src = group==='jsb' ? DATA.jsb : DATA.bwv;
+    const rec = src.find(r=>r.code===code);
+    if(!rec) return;
+    const pct = rec.pct;
+    const st = statusOf(pct);
+    const badgeClass = st==='critical'?'badge-critical':st==='good'?'badge-good':'badge-neutral';
+    const badgeLabel = pct===null ? 'n/d' : (pct>=100?'oltre budget':'in corso');
+    let html = `<div class="detail-header">
+      <div><h2><span class="code">${rec.code}</span> — ${rec.descrizione||'—'}</h2>
+        ${rec.manager? `<div class="manager">Manager: ${rec.manager}${rec.cliente? ' · Cliente: '+rec.cliente : ''}</div>`:''}
+      </div>
+      <span class="badge ${badgeClass}" style="font-size:12px;padding:5px 10px;">${badgeLabel}</span>
+    </div>
+    <div class="detail-stats">
+      <div class="dstat"><div class="label">Scarichi (${scarichiPeriodLabel(rec)})</div><div class="value">${fmt(rec.ore_consuntivate)}</div></div>
+      ${rec.monte_ore? `<div class="dstat"><div class="label">Pianificato (${futurePeriodLabel()})</div><div class="value">${fmt(rec.pianificato)}</div></div>
+      <div class="dstat"><div class="label">Totale</div><div class="value">${fmt(rec.totale)}</div></div>
+      <div class="dstat"><div class="label">Budget</div><div class="value">${fmt(rec.monte_ore)}</div></div>
+      <div class="dstat"><div class="label">Avanzamento</div><div class="value">${pct===null?'n/d':fmt(pct)+'%'}</div></div>` : ''}
+      <div class="dstat"><div class="label">Risorse coinvolte</div><div class="value">${rec.n_risorse_reali}</div></div>
+      <div class="dstat"><div class="label">Periodo</div><div class="value" style="font-size:13px;">${fmtDate(rec.prima_data)} → ${fmtDate(rec.ultima_data)}</div></div>
+    </div>
+    <div class="chart-card"><h3>Andamento ore cumulate</h3><div class="chart-wrap" id="modalChartWrap"></div></div>`;
+
+    if(rec.per_persona && rec.per_persona.length){
+      const isJsb = group==='jsb';
+      const maxOre = Math.max(1, ...rec.per_persona.map(p=>p.ore));
+      html += `<div class="people-card"><h3>Dettaglio risorse</h3>`;
+      if(isJsb) html += `<div class="hint">Ore consuntivate dal timesheet, ore pianificate future (${futurePeriodLabel()}, dal gsheet) e monte ore assegnato per la stessa persona.</div>`;
+      html += `<table class="people-table"><thead><tr><th>Risorsa</th><th>Ore consuntivate</th>${isJsb? '<th>Pianificato ('+futurePeriodLabel()+')</th><th>Monte ore</th><th>Avanzamento</th>':''}</tr></thead><tbody>`;
+      rec.per_persona.forEach(p=>{
+        const w = maxOre>0 ? Math.min(100, p.ore/maxOre*100) : 0;
+        const totPersona = p.ore + (p.ore_pianificate||0);
+        const barColor = isJsb && p.monte_ore>0 && totPersona>p.monte_ore ? 'var(--critical)' : 'var(--series-1)';
+        const unresolvedTag = isJsb && p.pianificato && !p.risolto ? ' <span class="unresolved-tag">(pianificata, nessuna ora ancora registrata)</span>' : '';
+        let pctCell = '';
+        if(isJsb){ const ppct = p.monte_ore>0 ? (totPersona/p.monte_ore*100) : null; pctCell = `<td>${ppct===null? '—' : fmt(ppct)+'%'}</td>`; }
+        const hasDrill = p.mensile_ytd && p.mensile_ytd.length;
+        const oreCell = hasDrill
+          ? `<button class="ore-drill" data-group="${group}" data-code="${rec.code}" data-nome="${p.nome}">${fmt(p.ore)}</button>`
+          : fmt(p.ore);
+        html += `<tr><td>${p.nome}${unresolvedTag}</td><td>${oreCell}<div class="mini-bar-track"><div class="mini-bar-fill" style="width:${w}%;background:${barColor};"></div></div></td>${isJsb? `<td>${p.ore_pianificate? fmt(p.ore_pianificate):'—'}</td><td>${p.monte_ore>0? fmt(p.monte_ore):'—'}</td>${pctCell}`:''}</tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+
+    document.getElementById('modalContent').innerHTML = html;
+    buildChart(document.getElementById('modalChartWrap'), rec.serie, rec.monte_ore);
+    document.getElementById('modalOverlay').classList.add('open');
+    document.querySelectorAll('.ore-drill').forEach(btn=>{
+      btn.addEventListener('click', ()=> openMonthlyDrill(btn.dataset.group, btn.dataset.code, btn.dataset.nome));
+    });
+  }
+  document.getElementById('modalClose').addEventListener('click', ()=> document.getElementById('modalOverlay').classList.remove('open'));
+  document.getElementById('modalOverlay').addEventListener('click', (e)=>{ if(e.target.id==='modalOverlay') document.getElementById('modalOverlay').classList.remove('open'); });
+
+  function openMonthlyDrill(group, code, nome){
+    const src = group==='jsb' ? DATA.jsb : DATA.bwv;
+    const rec = src.find(r=>r.code===code);
+    const p = rec && rec.per_persona.find(pp=>pp.nome===nome);
+    if(!p || !p.mensile_ytd || !p.mensile_ytd.length) return;
+    const maxOre = Math.max(1, ...p.mensile_ytd.map(m=>m.ore));
+    const totale = p.mensile_ytd.reduce((a,m)=>a+m.ore,0);
+    let html = `<div class="drill-header"><h3>Scarichi YTD · ${nome}</h3></div>
+      <div class="drill-sub">${code} — distribuzione mensile delle ore lavorate</div>`;
+    p.mensile_ytd.forEach((m,mi)=>{
+      const w = Math.min(100, m.ore/maxOre*100);
+      const rowId = 'drillrow_'+mi;
+      html += `<div class="drill-month-row">
+        <div class="drill-month-top">
+          <div class="drill-month-label">${m.mese}</div>
+          <div class="drill-month-track"><div class="drill-month-fill" style="width:${w}%;"></div></div>
+          <div class="drill-month-value">${fmt(m.ore)}</div>
+          <button class="btn-mini-detail" data-target="${rowId}">Dettaglio</button>
+        </div>
+        <div class="drill-entries" id="${rowId}">
+          ${m.voci.map(v=>`<div class="drill-entry"><span class="de-date">${fmtDate(v.data)}</span><span class="de-ore">${fmt(v.ore)}h</span>${v.nota? '<span class="de-nota">'+v.nota+'</span>':''}</div>`).join('')}
+        </div>
+      </div>`;
+    });
+    html += `<div class="drill-total"><span>Totale YTD</span><span class="value">${fmt(totale)} h</span></div>`;
+    document.getElementById('modal2Content').innerHTML = html;
+    document.querySelectorAll('#modal2Content .btn-mini-detail').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const target = document.getElementById(btn.dataset.target);
+        target.classList.toggle('open');
+      });
+    });
+    document.getElementById('modalOverlay2').classList.add('open');
+  }
+  document.getElementById('modalClose2').addEventListener('click', ()=> document.getElementById('modalOverlay2').classList.remove('open'));
+  document.getElementById('modalOverlay2').addEventListener('click', (e)=>{ if(e.target.id==='modalOverlay2') document.getElementById('modalOverlay2').classList.remove('open'); });
+
+  // ---------- refresh pianificato ----------
+  async function refreshPianifAndRerender(){
+    document.getElementById('refreshPianif').disabled = true;
+    await fetchLivePianificato();
+    renderStats();
+    renderJsbTable();
+    document.getElementById('refreshPianif').disabled = false;
+  }
+  document.getElementById('refreshPianif').addEventListener('click', refreshPianifAndRerender);
+
+  // ---------- init ----------
+  populateFilters();
+  document.getElementById('pianifStatus').textContent = `Pianificato: istantanea del ${DATA.meta.generato_il} (tentativo di aggiornamento dal gsheet in corso…)`;
+  renderStats();
+  renderJsbTable();
+  renderBwvTable();
+  refreshPianifAndRerender();
+}
+</script>
+<script>
+(function(){
+  async function pwDeriveKey(password, saltB64, iterations){
+    const salt = Uint8Array.from(atob(saltB64), c=>c.charCodeAt(0));
+    const baseKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name:'PBKDF2', salt, iterations, hash:'SHA-256' },
+      baseKey,
+      { name:'AES-GCM', length:256 },
+      false,
+      ['decrypt']
+    );
+  }
+  async function pwDecrypt(envelope, password){
+    const key = await pwDeriveKey(password, envelope.salt, envelope.iterations);
+    const iv = Uint8Array.from(atob(envelope.iv), c=>c.charCodeAt(0));
+    const ciphertext = Uint8Array.from(atob(envelope.ciphertext), c=>c.charCodeAt(0));
+    const plainBuf = await crypto.subtle.decrypt({ name:'AES-GCM', iv }, key, ciphertext);
+    return JSON.parse(new TextDecoder().decode(plainBuf));
+  }
+
+  const envelopePromise = fetch('data.enc.json', { cache:'no-store' }).then(r=>{
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    return r.json();
+  });
+
+  const form = document.getElementById('pwForm');
+  const input = document.getElementById('pwInput');
+  const errorEl = document.getElementById('pwError');
+  const submitBtn = document.getElementById('pwSubmit');
+
+  form.addEventListener('submit', async (e)=>{
+    e.preventDefault();
+    errorEl.textContent = '';
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Decifratura…';
+    try{
+      const envelope = await envelopePromise;
+      const DATA = await pwDecrypt(envelope, input.value);
+      document.getElementById('pwGate').remove();
+      const root = document.getElementById('vizRoot');
+      root.style.display = '';
+      renderDashboard(DATA);
+    }catch(ex){
+      errorEl.textContent = 'Password errata o dati non disponibili.';
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Sblocca';
+    }
+  });
+})();
+</script>
+</body>
+</html>
