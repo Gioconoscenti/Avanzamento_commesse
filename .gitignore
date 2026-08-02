@@ -1,0 +1,6 @@
+build/
+*.xlsx
+*.xls
+*.csv
+*plain*
+node_modules/
