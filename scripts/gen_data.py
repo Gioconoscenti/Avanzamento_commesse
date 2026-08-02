@@ -62,9 +62,19 @@ def load_timesheet():
     frames = [pd.read_excel(f, sheet_name=0) for f in files]
     ts = pd.concat(frames, ignore_index=True)
     ts = ts[ts["Data Registrazione"].notna()].copy()
+    # Solo righe approvate: le altre (bozza, in attesa) non sono consuntivi affidabili.
+    ts = ts[ts["Stato Timesheet"].astype(str).str.strip() == "Approvato"].copy()
     ts = ts.drop_duplicates()
     ts["code"] = ts["Nome Progetto"].apply(extract_code)
     ts["data_dt"] = pd.to_datetime(ts["Data Registrazione"])
+
+    # Il mese in corso non e' mai completamente consuntivato negli Excel: si
+    # ferma al mese precedente (incluso) e da qui in poi (mese corrente in
+    # poi) si affida al pianificato del gsheet, vedi apply_pianificato_baseline.
+    now = datetime.now()
+    cutoff = pd.Timestamp(now.year, now.month, 1)
+    ts = ts[ts["data_dt"] < cutoff]
+
     ts["persona_nome"] = ts["Nome Proprio"].astype(str).str.strip() + " " + ts["Cognome"].astype(str).str.strip()
     ts["persona_key"] = [name_key(n, c) for n, c in zip(ts["Nome Proprio"], ts["Cognome"])]
     ts["ore"] = ts["Durata"].fillna(0).astype(float)
@@ -367,6 +377,8 @@ def apply_pianificato_baseline(jsb_records, jsb_codes, anno_corrente):
         return
 
     now = datetime.now()
+    # Complementare al cutoff di load_timesheet(): i consuntivi Excel si fermano
+    # al mese precedente, il pianificato copre dal mese corrente in poi.
     from_month = now.month - 1 if now.year == anno_corrente else 0
     jsb_code_set = set(jsb_codes)
 
