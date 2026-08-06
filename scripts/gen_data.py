@@ -34,6 +34,12 @@ def norm(s):
     return s.strip().lower()
 
 
+# Ore di lavoro in una giornata piena, usate per convertire i "giorni" del
+# gsheet di pianificazione in ore. Solo Alice Pennisi lavora 6h/giorno.
+def hours_per_day(nome):
+    return 6.0 if "pennisi" in norm(nome) else 8.0
+
+
 def name_key(nome, cognome):
     nome, cognome = str(nome).strip(), str(cognome).strip()
     first = norm(nome.split()[0]) if nome else ""
@@ -253,6 +259,7 @@ def main():
             p.setdefault("pianificato", False)
             p.setdefault("risolto", True)
             p["ore_pianificate"] = 0.0
+            p["pianificato_mensile"] = []
             if p["risolto"]:
                 all_resolved_person_keys.add(key)
         rec["per_persona"] = sorted(merged.values(), key=lambda p: -p["ore"])
@@ -384,6 +391,7 @@ def apply_pianificato_baseline(jsb_records, jsb_codes, anno_corrente):
 
     by_commessa = defaultdict(float)
     by_commessa_persona = defaultdict(float)
+    by_commessa_persona_mensile = defaultdict(lambda: [0.0] * 12)
     for r in rows[1:]:
         if len(r) <= max(idx_commessa, idx_risorsa, *month_col):
             continue
@@ -391,15 +399,19 @@ def apply_pianificato_baseline(jsb_records, jsb_codes, anno_corrente):
         if not m or m.group(1) not in jsb_code_set:
             continue
         code = m.group(1)
-        future_days = sum(to_num(r[c]) for c in month_col[from_month:])
-        future_hours = future_days * 8
-        if future_hours == 0:
-            continue
         full = str(r[idx_risorsa]).strip()
         if "," in full:
             cog, nome = full.split(",", 1)
             full = f"{nome.strip()} {cog.strip()}"
+        rate = hours_per_day(full)
         key = key_from_full_name(full)
+        future_hours = 0.0
+        for mi in range(from_month, 12):
+            hours = to_num(r[month_col[mi]]) * rate
+            future_hours += hours
+            by_commessa_persona_mensile[(code, key)][mi] += hours
+        if future_hours == 0:
+            continue
         by_commessa[code] += future_hours
         by_commessa_persona[(code, key)] += future_hours
 
@@ -411,6 +423,12 @@ def apply_pianificato_baseline(jsb_records, jsb_codes, anno_corrente):
         for pp in rec["per_persona"]:
             pkey = key_from_full_name(pp["nome"])
             pp["ore_pianificate"] = round(by_commessa_persona.get((rec["code"], pkey), 0.0), 2)
+            monthly = by_commessa_persona_mensile.get((rec["code"], pkey))
+            pp["pianificato_mensile"] = [
+                {"mese": f"{MONTHS_IT[mi].capitalize()}-{str(anno_corrente)[2:]}", "ore": round(monthly[mi], 2)}
+                for mi in range(from_month, 12)
+                if monthly and monthly[mi] > 0
+            ]
 
 
 if __name__ == "__main__":

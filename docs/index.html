@@ -330,6 +330,11 @@ function renderDashboard(DATA){
   }
   const toNum = s => { const v = parseFloat(String(s||'').trim().replace(',', '.')); return isNaN(v) ? 0 : v; };
   const normName = s => s.toLowerCase().replace(/\s+/g,' ').trim();
+  // Ore in una giornata piena: usate per convertire i "giorni" del gsheet in ore
+  // e per il toggle di visualizzazione giorni/ore. Solo Alice Pennisi lavora 6h/giorno.
+  const hoursPerDay = nome => /pennisi/i.test(nome) ? 6 : 8;
+  let unitMode = 'ore'; // 'ore' | 'giorni' — solo per la tabella Risorse e i drill-down mensili
+  const unitVal = (ore, nome) => unitMode==='ore' ? fmt(ore) : fmt(ore / hoursPerDay(nome));
   const MONTH_LABELS_IT = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
   function futurePeriodLabel(){
     const now = new Date();
@@ -361,7 +366,7 @@ function renderDashboard(DATA){
       const now = new Date();
       const fromMonth = now.getFullYear()===DATA.meta.anno_corrente ? now.getMonth() : 0;
       const jsbCodes = new Set(DATA.jsb.map(r=>r.code));
-      const byCommessa = {}, byCommessaPersona = {};
+      const byCommessa = {}, byCommessaPersona = {}, byCommessaPersonaMensile = {};
 
       for(let i=1;i<rows.length;i++){
         const r = rows[i];
@@ -369,18 +374,24 @@ function renderDashboard(DATA){
         const m = commessaRaw.match(/^(JSB\d+)/);
         if(!m || !jsbCodes.has(m[1])) continue;
         const code = m[1];
-        let futureDays = 0;
-        for(let mi=fromMonth; mi<12; mi++) futureDays += toNum(r[monthCol[mi]]);
-        const futureHours = futureDays * 8;
-        if(futureHours===0) continue;
         let full = (r[idxRisorsa]||'').trim();
         if(full.includes(',')){ const [cog,nome] = full.split(','); full = (nome||'').trim()+' '+(cog||'').trim(); }
+        const rate = hoursPerDay(full);
         const norm = normName(full);
-        byCommessa[code] = (byCommessa[code]||0) + futureHours;
         const key = code+'||'+norm;
+        let futureHours = 0;
+        const mensile = byCommessaPersonaMensile[key] || (byCommessaPersonaMensile[key] = []);
+        for(let mi=fromMonth; mi<12; mi++){
+          const hours = toNum(r[monthCol[mi]]) * rate;
+          futureHours += hours;
+          mensile[mi] = (mensile[mi]||0) + hours;
+        }
+        if(futureHours===0) continue;
+        byCommessa[code] = (byCommessa[code]||0) + futureHours;
         byCommessaPersona[key] = (byCommessaPersona[key]||0) + futureHours;
       }
 
+      const MONTH_LABEL_CAP = m => m[0].toUpperCase()+m.slice(1);
       DATA.jsb.forEach(rec=>{
         const p = Math.round((byCommessa[rec.code]||0)*100)/100;
         rec.pianificato = p;
@@ -389,6 +400,14 @@ function renderDashboard(DATA){
         rec.per_persona.forEach(pp=>{
           const key = rec.code+'||'+normName(pp.nome);
           pp.ore_pianificate = Math.round((byCommessaPersona[key]||0)*100)/100;
+          const mensile = byCommessaPersonaMensile[key];
+          pp.pianificato_mensile = [];
+          if(mensile){
+            for(let mi=fromMonth; mi<12; mi++){
+              const ore = Math.round((mensile[mi]||0)*100)/100;
+              if(ore>0) pp.pianificato_mensile.push({ mese: MONTH_LABEL_CAP(MONTH_LABELS_IT[mi])+'-'+String(DATA.meta.anno_corrente).slice(2), ore });
+            }
+          }
         });
       });
       DATA.meta.totale_pianificato = Math.round(DATA.jsb.reduce((a,r)=>a+r.pianificato,0)*100)/100;
@@ -702,8 +721,9 @@ function renderDashboard(DATA){
     if(rec.per_persona && rec.per_persona.length){
       const isJsb = group==='jsb';
       const maxOre = Math.max(1, ...rec.per_persona.map(p=>p.ore));
-      html += `<div class="people-card"><h3>Dettaglio risorse</h3>`;
-      if(isJsb) html += `<div class="hint">Ore consuntivate dal timesheet, ore pianificate future (${futurePeriodLabel()}, dal gsheet) e monte ore assegnato per la stessa persona.</div>`;
+      const unitLabel = unitMode==='ore' ? 'Mostra in giorni' : 'Mostra in ore';
+      html += `<div class="people-card"><h3>Dettaglio risorse <button class="chip" id="unitToggle" style="margin-left:8px;font-size:11px;padding:4px 10px;">${unitLabel}</button></h3>`;
+      if(isJsb) html += `<div class="hint">Ore consuntivate dal timesheet, ore pianificate future (${futurePeriodLabel()}, dal gsheet) e monte ore assegnato per la stessa persona. Clicca su un valore per il dettaglio mensile.</div>`;
       html += `<table class="people-table"><thead><tr><th>Risorsa</th><th>Ore consuntivate</th>${isJsb? '<th>Pianificato ('+futurePeriodLabel()+')</th><th>Monte ore</th><th>Avanzamento</th>':''}</tr></thead><tbody>`;
       rec.per_persona.forEach(p=>{
         const w = maxOre>0 ? Math.min(100, p.ore/maxOre*100) : 0;
@@ -714,9 +734,14 @@ function renderDashboard(DATA){
         if(isJsb){ const ppct = p.monte_ore>0 ? (totPersona/p.monte_ore*100) : null; pctCell = `<td>${ppct===null? '—' : fmt(ppct)+'%'}</td>`; }
         const hasDrill = p.mensile_ytd && p.mensile_ytd.length;
         const oreCell = hasDrill
-          ? `<button class="ore-drill" data-group="${group}" data-code="${rec.code}" data-nome="${p.nome}">${fmt(p.ore)}</button>`
-          : fmt(p.ore);
-        html += `<tr><td>${p.nome}${unresolvedTag}</td><td>${oreCell}<div class="mini-bar-track"><div class="mini-bar-fill" style="width:${w}%;background:${barColor};"></div></div></td>${isJsb? `<td>${p.ore_pianificate? fmt(p.ore_pianificate):'—'}</td><td>${p.monte_ore>0? fmt(p.monte_ore):'—'}</td>${pctCell}`:''}</tr>`;
+          ? `<button class="ore-drill" data-kind="consuntivo" data-group="${group}" data-code="${rec.code}" data-nome="${p.nome}">${unitVal(p.ore, p.nome)}</button>`
+          : unitVal(p.ore, p.nome);
+        const hasPianifDrill = isJsb && p.pianificato_mensile && p.pianificato_mensile.length;
+        const pianifCell = !isJsb ? '' : !p.ore_pianificate ? '—'
+          : hasPianifDrill
+            ? `<button class="ore-drill" data-kind="pianificato" data-group="${group}" data-code="${rec.code}" data-nome="${p.nome}">${unitVal(p.ore_pianificate, p.nome)}</button>`
+            : unitVal(p.ore_pianificate, p.nome);
+        html += `<tr><td>${p.nome}${unresolvedTag}</td><td>${oreCell}<div class="mini-bar-track"><div class="mini-bar-fill" style="width:${w}%;background:${barColor};"></div></div></td>${isJsb? `<td>${pianifCell}</td><td>${p.monte_ore>0? unitVal(p.monte_ore, p.nome):'—'}</td>${pctCell}`:''}</tr>`;
       });
       html += `</tbody></table></div>`;
     }
@@ -725,7 +750,14 @@ function renderDashboard(DATA){
     buildChart(document.getElementById('modalChartWrap'), rec.serie, rec.monte_ore);
     document.getElementById('modalOverlay').classList.add('open');
     document.querySelectorAll('.ore-drill').forEach(btn=>{
-      btn.addEventListener('click', ()=> openMonthlyDrill(btn.dataset.group, btn.dataset.code, btn.dataset.nome));
+      const opener = btn.dataset.kind==='pianificato' ? openPianificatoDrill : openMonthlyDrill;
+      btn.addEventListener('click', ()=> opener(btn.dataset.group, btn.dataset.code, btn.dataset.nome));
+    });
+    const unitToggle = document.getElementById('unitToggle');
+    if(unitToggle) unitToggle.addEventListener('click', ()=>{
+      unitMode = unitMode==='ore' ? 'giorni' : 'ore';
+      document.getElementById('modalOverlay2').classList.remove('open');
+      openDetail(group, code);
     });
   }
   document.getElementById('modalClose').addEventListener('click', ()=> document.getElementById('modalOverlay').classList.remove('open'));
@@ -738,6 +770,7 @@ function renderDashboard(DATA){
     if(!p || !p.mensile_ytd || !p.mensile_ytd.length) return;
     const maxOre = Math.max(1, ...p.mensile_ytd.map(m=>m.ore));
     const totale = p.mensile_ytd.reduce((a,m)=>a+m.ore,0);
+    const unit = unitMode==='ore' ? 'h' : 'g';
     let html = `<div class="drill-header"><h3>Scarichi YTD · ${nome}</h3></div>
       <div class="drill-sub">${code} — distribuzione mensile delle ore lavorate</div>`;
     p.mensile_ytd.forEach((m,mi)=>{
@@ -747,15 +780,15 @@ function renderDashboard(DATA){
         <div class="drill-month-top">
           <div class="drill-month-label">${m.mese}</div>
           <div class="drill-month-track"><div class="drill-month-fill" style="width:${w}%;"></div></div>
-          <div class="drill-month-value">${fmt(m.ore)}</div>
+          <div class="drill-month-value">${unitVal(m.ore, nome)}</div>
           <button class="btn-mini-detail" data-target="${rowId}">Dettaglio</button>
         </div>
         <div class="drill-entries" id="${rowId}">
-          ${m.voci.map(v=>`<div class="drill-entry"><span class="de-date">${fmtDate(v.data)}</span><span class="de-ore">${fmt(v.ore)}h</span>${v.nota? '<span class="de-nota">'+v.nota+'</span>':''}</div>`).join('')}
+          ${m.voci.map(v=>`<div class="drill-entry"><span class="de-date">${fmtDate(v.data)}</span><span class="de-ore">${unitVal(v.ore, nome)}${unit}</span>${v.nota? '<span class="de-nota">'+v.nota+'</span>':''}</div>`).join('')}
         </div>
       </div>`;
     });
-    html += `<div class="drill-total"><span>Totale YTD</span><span class="value">${fmt(totale)} h</span></div>`;
+    html += `<div class="drill-total"><span>Totale YTD</span><span class="value">${unitVal(totale, nome)} ${unit}</span></div>`;
     document.getElementById('modal2Content').innerHTML = html;
     document.querySelectorAll('#modal2Content .btn-mini-detail').forEach(btn=>{
       btn.addEventListener('click', ()=>{
@@ -763,6 +796,30 @@ function renderDashboard(DATA){
         target.classList.toggle('open');
       });
     });
+    document.getElementById('modalOverlay2').classList.add('open');
+  }
+
+  function openPianificatoDrill(group, code, nome){
+    const rec = DATA.jsb.find(r=>r.code===code);
+    const p = rec && rec.per_persona.find(pp=>pp.nome===nome);
+    if(!p || !p.pianificato_mensile || !p.pianificato_mensile.length) return;
+    const maxOre = Math.max(1, ...p.pianificato_mensile.map(m=>m.ore));
+    const totale = p.pianificato_mensile.reduce((a,m)=>a+m.ore,0);
+    const unit = unitMode==='ore' ? 'h' : 'g';
+    let html = `<div class="drill-header"><h3>Pianificato · ${nome}</h3></div>
+      <div class="drill-sub">${code} — distribuzione mensile da Google Sheet (${futurePeriodLabel()})</div>`;
+    p.pianificato_mensile.forEach(m=>{
+      const w = Math.min(100, m.ore/maxOre*100);
+      html += `<div class="drill-month-row">
+        <div class="drill-month-top">
+          <div class="drill-month-label">${m.mese}</div>
+          <div class="drill-month-track"><div class="drill-month-fill" style="width:${w}%;"></div></div>
+          <div class="drill-month-value">${unitVal(m.ore, nome)}</div>
+        </div>
+      </div>`;
+    });
+    html += `<div class="drill-total"><span>Totale ${futurePeriodLabel()}</span><span class="value">${unitVal(totale, nome)} ${unit}</span></div>`;
+    document.getElementById('modal2Content').innerHTML = html;
     document.getElementById('modalOverlay2').classList.add('open');
   }
   document.getElementById('modalClose2').addEventListener('click', ()=> document.getElementById('modalOverlay2').classList.remove('open'));
