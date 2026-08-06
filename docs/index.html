@@ -138,8 +138,10 @@
   .axis-line{ stroke:var(--baseline); stroke-width:1; }
   .axis-label{ fill:var(--text-muted); font-size:10.5px; }
   .line-path{ fill:none; stroke:var(--series-1); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; }
+  .line-path-proj{ fill:none; stroke:var(--series-1); stroke-width:2; stroke-linecap:round; stroke-linejoin:round; stroke-dasharray:6 5; opacity:.55; }
   .area-path{ fill:var(--series-1-fill); stroke:none; }
   .end-dot{ fill:var(--series-1); stroke:var(--surface-1); stroke-width:2; }
+  .end-dot-proj{ fill:var(--surface-1); stroke:var(--series-1); stroke-width:2; opacity:.7; }
   .threshold-line{ stroke:var(--critical); stroke-width:1.5; stroke-dasharray:4 3; }
   .threshold-label{ fill:var(--critical); font-size:10.5px; font-weight:650; }
   .crosshair-line{ stroke:var(--text-secondary); stroke-width:1; stroke-dasharray:2 2; opacity:0; }
@@ -298,6 +300,7 @@ function renderDashboard(DATA){
   const root = document.querySelector('.viz-root');
   const fmt = n => (n===null||n===undefined) ? '—' : n.toLocaleString('it-IT', {maximumFractionDigits:1});
   const fmtDate = s => { if(!s) return '—'; const d=new Date(s); return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}); };
+  const fmtDateObj = d => d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
 
   DATA.jsb.forEach(r=>{ r.tipo='JSB'; });
   DATA.bwv.forEach(r=>{ r.tipo='BWV'; });
@@ -335,6 +338,14 @@ function renderDashboard(DATA){
   const hoursPerDay = nome => /pennisi/i.test(nome) ? 6 : 8;
   let unitMode = 'ore'; // 'ore' | 'giorni' — solo per la tabella Risorse e i drill-down mensili
   const unitVal = (ore, nome) => unitMode==='ore' ? fmt(ore) : fmt(ore / hoursPerDay(nome));
+  // Totali di commessa (piu' persone, ognuna col suo tasso ore/giorno): la conversione
+  // in giorni somma i giorni-persona invece di dividere il totale per un tasso fisso.
+  function recGiorni(rec, key){
+    return (rec.per_persona||[]).reduce((a,p)=> a + (p[key]||0)/hoursPerDay(p.nome), 0);
+  }
+  function recUnitVal(rec, ore, key){
+    return unitMode==='ore' ? fmt(ore) : fmt(recGiorni(rec, key));
+  }
   const MONTH_LABELS_IT = ['gen','feb','mar','apr','mag','giu','lug','ago','set','ott','nov','dic'];
   function futurePeriodLabel(){
     const now = new Date();
@@ -366,7 +377,7 @@ function renderDashboard(DATA){
       const now = new Date();
       const fromMonth = now.getFullYear()===DATA.meta.anno_corrente ? now.getMonth() : 0;
       const jsbCodes = new Set(DATA.jsb.map(r=>r.code));
-      const byCommessa = {}, byCommessaPersona = {}, byCommessaPersonaMensile = {};
+      const byCommessa = {}, byCommessaPersona = {}, byCommessaPersonaMensile = {}, byCommessaMensile = {};
 
       for(let i=1;i<rows.length;i++){
         const r = rows[i];
@@ -381,10 +392,12 @@ function renderDashboard(DATA){
         const key = code+'||'+norm;
         let futureHours = 0;
         const mensile = byCommessaPersonaMensile[key] || (byCommessaPersonaMensile[key] = []);
+        const mensileCommessa = byCommessaMensile[code] || (byCommessaMensile[code] = []);
         for(let mi=fromMonth; mi<12; mi++){
           const hours = toNum(r[monthCol[mi]]) * rate;
           futureHours += hours;
           mensile[mi] = (mensile[mi]||0) + hours;
+          mensileCommessa[mi] = (mensileCommessa[mi]||0) + hours;
         }
         if(futureHours===0) continue;
         byCommessa[code] = (byCommessa[code]||0) + futureHours;
@@ -392,11 +405,20 @@ function renderDashboard(DATA){
       }
 
       const MONTH_LABEL_CAP = m => m[0].toUpperCase()+m.slice(1);
+      const monthLabel = mi => MONTH_LABEL_CAP(MONTH_LABELS_IT[mi])+'-'+String(DATA.meta.anno_corrente).slice(2);
       DATA.jsb.forEach(rec=>{
         const p = Math.round((byCommessa[rec.code]||0)*100)/100;
         rec.pianificato = p;
         rec.totale = Math.round((rec.ore_consuntivate + p)*100)/100;
         rec.pct = rec.monte_ore>0 ? Math.round(rec.totale/rec.monte_ore*1000)/10 : null;
+        const mensileCommessa = byCommessaMensile[rec.code];
+        rec.pianificato_mensile = [];
+        if(mensileCommessa){
+          for(let mi=fromMonth; mi<12; mi++){
+            const ore = Math.round((mensileCommessa[mi]||0)*100)/100;
+            if(ore>0) rec.pianificato_mensile.push({ mese: monthLabel(mi), ore, anno: DATA.meta.anno_corrente, mi });
+          }
+        }
         rec.per_persona.forEach(pp=>{
           const key = rec.code+'||'+normName(pp.nome);
           pp.ore_pianificate = Math.round((byCommessaPersona[key]||0)*100)/100;
@@ -405,7 +427,7 @@ function renderDashboard(DATA){
           if(mensile){
             for(let mi=fromMonth; mi<12; mi++){
               const ore = Math.round((mensile[mi]||0)*100)/100;
-              if(ore>0) pp.pianificato_mensile.push({ mese: MONTH_LABEL_CAP(MONTH_LABELS_IT[mi])+'-'+String(DATA.meta.anno_corrente).slice(2), ore });
+              if(ore>0) pp.pianificato_mensile.push({ mese: monthLabel(mi), ore });
             }
           }
         });
@@ -598,7 +620,7 @@ function renderDashboard(DATA){
   });
 
   // ---------- chart (riuso) ----------
-  function buildChart(container, serie, monteOre){
+  function buildChart(container, serie, monteOre, pianifMensile){
     container.innerHTML = '';
     if(!serie.length){ container.innerHTML = '<div class="empty-state">Nessuna ora registrata per questa voce.</div>'; return; }
     const W = 860, H = 260, padL = 46, padR = 20, padT = 18, padB = 28;
@@ -608,9 +630,26 @@ function renderDashboard(DATA){
     svg.setAttribute('preserveAspectRatio','none');
 
     const dates = serie.map(d=>new Date(d.d).getTime());
-    const xMin = dates[0], xMax = dates[dates.length-1];
+    const actualXMax = dates[dates.length-1];
+
+    // proiezione: continua dal punto reale usando il pianificato mensile del gsheet,
+    // fino alla fine dell'ultimo mese pianificato — disegnata come linea tratteggiata.
+    let projPoints = null;
+    if(pianifMensile && pianifMensile.length){
+      let cum = serie[serie.length-1].c;
+      projPoints = [{ t: actualXMax, c: cum }];
+      pianifMensile.forEach(m=>{
+        cum += m.ore;
+        const t = new Date(m.anno, m.mi+1, 0).getTime(); // ultimo giorno del mese
+        projPoints.push({ t, c: cum, mese: m.mese, ore: m.ore });
+      });
+    }
+
+    const xMin = dates[0];
+    const xMax = projPoints ? projPoints[projPoints.length-1].t : actualXMax;
     const xSpan = Math.max(1, xMax - xMin);
-    const yMax = Math.max(serie[serie.length-1].c, monteOre||0) * 1.12 || 1;
+    const yMaxData = Math.max(serie[serie.length-1].c, projPoints ? projPoints[projPoints.length-1].c : 0);
+    const yMax = Math.max(yMaxData, monteOre||0) * 1.12 || 1;
     const xScale = t => padL + (t - xMin)/xSpan * (W-padL-padR);
     const yScale = v => H - padB - (v/yMax) * (H-padT-padB);
 
@@ -630,11 +669,14 @@ function renderDashboard(DATA){
     const baseline = document.createElementNS(svg.namespaceURI,'line');
     baseline.setAttribute('x1',padL); baseline.setAttribute('x2',W-padR); baseline.setAttribute('y1',H-padB); baseline.setAttribute('y2',H-padB); baseline.setAttribute('class','axis-line');
     axisG.appendChild(baseline);
-    [0, serie.length-1].forEach((idx,i)=>{
+    const axisLabels = [{ t: xMin, text: fmtDate(serie[0].d), anchor: 'start' }];
+    if(projPoints) axisLabels.push({ t: actualXMax, text: fmtDate(serie[serie.length-1].d), anchor: 'middle' });
+    axisLabels.push({ t: xMax, text: projPoints ? fmtDateObj(new Date(xMax)) : fmtDate(serie[serie.length-1].d), anchor: 'end' });
+    axisLabels.forEach(({t,text,anchor})=>{
       const lbl = document.createElementNS(svg.namespaceURI,'text');
-      lbl.setAttribute('x', xScale(dates[idx])); lbl.setAttribute('y', H-8);
-      lbl.setAttribute('text-anchor', i===0?'start':'end'); lbl.setAttribute('class','axis-label');
-      lbl.textContent = fmtDate(serie[idx].d); axisG.appendChild(lbl);
+      lbl.setAttribute('x', xScale(t)); lbl.setAttribute('y', H-8);
+      lbl.setAttribute('text-anchor', anchor); lbl.setAttribute('class','axis-label');
+      lbl.textContent = text; axisG.appendChild(lbl);
     });
     svg.appendChild(axisG);
 
@@ -650,13 +692,23 @@ function renderDashboard(DATA){
 
     let dPath = '';
     serie.forEach((pt,i)=>{ const x = xScale(dates[i]), y = yScale(pt.c); dPath += (i===0?'M':'L') + x.toFixed(2) + ' ' + y.toFixed(2) + ' '; });
-    const aPath = dPath + `L ${xScale(xMax).toFixed(2)} ${yScale(0).toFixed(2)} L ${xScale(xMin).toFixed(2)} ${yScale(0).toFixed(2)} Z`;
+    const aPath = dPath + `L ${xScale(actualXMax).toFixed(2)} ${yScale(0).toFixed(2)} L ${xScale(xMin).toFixed(2)} ${yScale(0).toFixed(2)} Z`;
     const area = document.createElementNS(svg.namespaceURI,'path'); area.setAttribute('d', aPath); area.setAttribute('class','area-path'); svg.appendChild(area);
     const line = document.createElementNS(svg.namespaceURI,'path'); line.setAttribute('d', dPath); line.setAttribute('class','line-path'); svg.appendChild(line);
 
+    if(projPoints){
+      let pPath = '';
+      projPoints.forEach((pt,i)=>{ const x = xScale(pt.t), y = yScale(pt.c); pPath += (i===0?'M':'L') + x.toFixed(2) + ' ' + y.toFixed(2) + ' '; });
+      const projLine = document.createElementNS(svg.namespaceURI,'path'); projLine.setAttribute('d', pPath); projLine.setAttribute('class','line-path-proj'); svg.appendChild(projLine);
+      const lastProj = projPoints[projPoints.length-1];
+      const projEndDot = document.createElementNS(svg.namespaceURI,'circle');
+      projEndDot.setAttribute('cx', xScale(lastProj.t)); projEndDot.setAttribute('cy', yScale(lastProj.c)); projEndDot.setAttribute('r', 4); projEndDot.setAttribute('class','end-dot-proj');
+      svg.appendChild(projEndDot);
+    }
+
     const last = serie[serie.length-1];
     const endDot = document.createElementNS(svg.namespaceURI,'circle');
-    endDot.setAttribute('cx', xScale(xMax)); endDot.setAttribute('cy', yScale(last.c)); endDot.setAttribute('r', 4); endDot.setAttribute('class','end-dot');
+    endDot.setAttribute('cx', xScale(actualXMax)); endDot.setAttribute('cy', yScale(last.c)); endDot.setAttribute('r', 4); endDot.setAttribute('class','end-dot');
     svg.appendChild(endDot);
 
     const crosshair = document.createElementNS(svg.namespaceURI,'line');
@@ -672,23 +724,32 @@ function renderDashboard(DATA){
     tooltip.innerHTML = `<div class="t-date"></div><div class="t-val"></div>`;
     container.appendChild(tooltip);
 
+    // punti per l'hover: dati reali + eventuale proiezione, in un'unica timeline
+    const hoverPoints = serie.map((pt,i)=>({ t: dates[i], c: pt.c, h: pt.h, proj:false, label: fmtDate(pt.d) }));
+    if(projPoints){
+      for(let i=1;i<projPoints.length;i++){
+        hoverPoints.push({ t: projPoints[i].t, c: projPoints[i].c, h: projPoints[i].ore, proj:true, label: projPoints[i].mese });
+      }
+    }
     function findNearest(px){
       const targetT = xMin + (px-padL)/(W-padL-padR)*xSpan;
       let best=0, bestDist=Infinity;
-      for(let i=0;i<dates.length;i++){ const dist = Math.abs(dates[i]-targetT); if(dist<bestDist){ bestDist=dist; best=i; } }
+      for(let i=0;i<hoverPoints.length;i++){ const dist = Math.abs(hoverPoints[i].t-targetT); if(dist<bestDist){ bestDist=dist; best=i; } }
       return best;
     }
     hit.addEventListener('mousemove', (ev)=>{
       const rect = svg.getBoundingClientRect();
       const px = (ev.clientX-rect.left)/rect.width*W;
       const idx = findNearest(px);
-      const pt = serie[idx];
-      const x = xScale(dates[idx]), y = yScale(pt.c);
+      const pt = hoverPoints[idx];
+      const x = xScale(pt.t), y = yScale(pt.c);
       crosshair.setAttribute('x1',x); crosshair.setAttribute('x2',x); crosshair.style.opacity=1;
       hoverDot.setAttribute('cx',x); hoverDot.setAttribute('cy',y); hoverDot.style.opacity=1;
       tooltip.style.opacity=1; tooltip.style.left = (x/W*rect.width)+'px'; tooltip.style.top = (y/H*rect.height)+'px';
-      tooltip.querySelector('.t-date').textContent = fmtDate(pt.d);
-      tooltip.querySelector('.t-val').textContent = `${fmt(pt.c)}h cumulate (+${fmt(pt.h)}h quel giorno)`;
+      tooltip.querySelector('.t-date').textContent = pt.proj ? pt.label+' (pianificato)' : pt.label;
+      tooltip.querySelector('.t-val').textContent = pt.proj
+        ? `${fmt(pt.c)}h cumulate stimate (+${fmt(pt.h)}h nel mese)`
+        : `${fmt(pt.c)}h cumulate (+${fmt(pt.h)}h quel giorno)`;
     });
     hit.addEventListener('mouseleave', ()=>{ crosshair.style.opacity=0; hoverDot.style.opacity=0; tooltip.style.opacity=0; });
   }
@@ -701,17 +762,21 @@ function renderDashboard(DATA){
     const st = statusOf(pct);
     const badgeClass = st==='critical'?'badge-critical':st==='good'?'badge-good':'badge-neutral';
     const badgeLabel = pct===null ? 'n/d' : (pct>=100?'oltre budget':'in corso');
+    const unitLabel = unitMode==='ore' ? 'Mostra in giorni' : 'Mostra in ore';
     let html = `<div class="detail-header">
       <div><h2><span class="code">${rec.code}</span> — ${rec.descrizione||'—'}</h2>
         ${rec.manager? `<div class="manager">Manager: ${rec.manager}${rec.cliente? ' · Cliente: '+rec.cliente : ''}</div>`:''}
       </div>
-      <span class="badge ${badgeClass}" style="font-size:12px;padding:5px 10px;">${badgeLabel}</span>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <button class="chip" id="unitToggle" style="font-size:11px;padding:6px 12px;">${unitLabel}</button>
+        <span class="badge ${badgeClass}" style="font-size:12px;padding:5px 10px;">${badgeLabel}</span>
+      </div>
     </div>
     <div class="detail-stats">
-      <div class="dstat"><div class="label">Scarichi (${scarichiPeriodLabel(rec)})</div><div class="value">${fmt(rec.ore_consuntivate)}</div></div>
-      ${rec.monte_ore? `<div class="dstat"><div class="label">Pianificato (${futurePeriodLabel()})</div><div class="value">${fmt(rec.pianificato)}</div></div>
-      <div class="dstat"><div class="label">Totale</div><div class="value">${fmt(rec.totale)}</div></div>
-      <div class="dstat"><div class="label">Budget</div><div class="value">${fmt(rec.monte_ore)}</div></div>
+      <div class="dstat"><div class="label">Scarichi (${scarichiPeriodLabel(rec)})</div><div class="value">${recUnitVal(rec, rec.ore_consuntivate, 'ore')}</div></div>
+      ${rec.monte_ore? `<div class="dstat"><div class="label">Pianificato (${futurePeriodLabel()})</div><div class="value">${recUnitVal(rec, rec.pianificato, 'ore_pianificate')}</div></div>
+      <div class="dstat"><div class="label">Totale</div><div class="value">${unitMode==='ore'? fmt(rec.totale) : fmt(recGiorni(rec,'ore')+recGiorni(rec,'ore_pianificate'))}</div></div>
+      <div class="dstat"><div class="label">Budget</div><div class="value">${recUnitVal(rec, rec.monte_ore, 'monte_ore')}</div></div>
       <div class="dstat"><div class="label">Avanzamento</div><div class="value">${pct===null?'n/d':fmt(pct)+'%'}</div></div>` : ''}
       <div class="dstat"><div class="label">Risorse coinvolte</div><div class="value">${rec.n_risorse_reali}</div></div>
       <div class="dstat"><div class="label">Periodo</div><div class="value" style="font-size:13px;">${fmtDate(rec.prima_data)} → ${fmtDate(rec.ultima_data)}</div></div>
@@ -721,8 +786,7 @@ function renderDashboard(DATA){
     if(rec.per_persona && rec.per_persona.length){
       const isJsb = group==='jsb';
       const maxOre = Math.max(1, ...rec.per_persona.map(p=>p.ore));
-      const unitLabel = unitMode==='ore' ? 'Mostra in giorni' : 'Mostra in ore';
-      html += `<div class="people-card"><h3>Dettaglio risorse <button class="chip" id="unitToggle" style="margin-left:8px;font-size:11px;padding:4px 10px;">${unitLabel}</button></h3>`;
+      html += `<div class="people-card"><h3>Dettaglio risorse</h3>`;
       if(isJsb) html += `<div class="hint">Ore consuntivate dal timesheet, ore pianificate future (${futurePeriodLabel()}, dal gsheet) e monte ore assegnato per la stessa persona. Clicca su un valore per il dettaglio mensile.</div>`;
       html += `<table class="people-table"><thead><tr><th>Risorsa</th><th>Ore consuntivate</th>${isJsb? '<th>Pianificato ('+futurePeriodLabel()+')</th><th>Monte ore</th><th>Avanzamento</th>':''}</tr></thead><tbody>`;
       rec.per_persona.forEach(p=>{
@@ -747,7 +811,7 @@ function renderDashboard(DATA){
     }
 
     document.getElementById('modalContent').innerHTML = html;
-    buildChart(document.getElementById('modalChartWrap'), rec.serie, rec.monte_ore);
+    buildChart(document.getElementById('modalChartWrap'), rec.serie, rec.monte_ore, rec.pianificato_mensile);
     document.getElementById('modalOverlay').classList.add('open');
     document.querySelectorAll('.ore-drill').forEach(btn=>{
       const opener = btn.dataset.kind==='pianificato' ? openPianificatoDrill : openMonthlyDrill;

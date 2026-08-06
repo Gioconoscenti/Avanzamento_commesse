@@ -233,6 +233,7 @@ def main():
         rec["divisione"] = DIVISIONE
         rec["monte_ore"] = monte_ore_commessa.get(code, 0.0)
         rec["pianificato"] = 0.0
+        rec["pianificato_mensile"] = []
         rec["totale"] = rec["ore_consuntivate"]
         rec["pct"] = round(rec["totale"] / rec["monte_ore"] * 100, 1) if rec["monte_ore"] > 0 else None
 
@@ -391,6 +392,7 @@ def apply_pianificato_baseline(jsb_records, jsb_codes, anno_corrente):
 
     by_commessa = defaultdict(float)
     by_commessa_persona = defaultdict(float)
+    by_commessa_mensile = defaultdict(lambda: [0.0] * 12)
     by_commessa_persona_mensile = defaultdict(lambda: [0.0] * 12)
     for r in rows[1:]:
         if len(r) <= max(idx_commessa, idx_risorsa, *month_col):
@@ -410,6 +412,7 @@ def apply_pianificato_baseline(jsb_records, jsb_codes, anno_corrente):
             hours = to_num(r[month_col[mi]]) * rate
             future_hours += hours
             by_commessa_persona_mensile[(code, key)][mi] += hours
+            by_commessa_mensile[code][mi] += hours
         if future_hours == 0:
             continue
         by_commessa[code] += future_hours
@@ -420,6 +423,17 @@ def apply_pianificato_baseline(jsb_records, jsb_codes, anno_corrente):
         rec["pianificato"] = p
         rec["totale"] = round(rec["ore_consuntivate"] + p, 2)
         rec["pct"] = round(rec["totale"] / rec["monte_ore"] * 100, 1) if rec["monte_ore"] > 0 else None
+        commessa_monthly = by_commessa_mensile.get(rec["code"])
+        rec["pianificato_mensile"] = [
+            {
+                "mese": f"{MONTHS_IT[mi].capitalize()}-{str(anno_corrente)[2:]}",
+                "ore": round(commessa_monthly[mi], 2),
+                "anno": anno_corrente,
+                "mi": mi,
+            }
+            for mi in range(from_month, 12)
+            if commessa_monthly and commessa_monthly[mi] > 0
+        ]
         for pp in rec["per_persona"]:
             pkey = key_from_full_name(pp["nome"])
             pp["ore_pianificate"] = round(by_commessa_persona.get((rec["code"], pkey), 0.0), 2)
