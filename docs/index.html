@@ -620,7 +620,8 @@ function renderDashboard(DATA){
   });
 
   // ---------- chart (riuso) ----------
-  function buildChart(container, serie, monteOre, pianifMensile){
+  function buildChart(container, serie, monteOre, pianifMensile, unit){
+    unit = unit || 'h';
     container.innerHTML = '';
     if(!serie.length){ container.innerHTML = '<div class="empty-state">Nessuna ora registrata per questa voce.</div>'; return; }
     const W = 860, H = 260, padL = 46, padR = 20, padT = 18, padB = 28;
@@ -687,7 +688,7 @@ function renderDashboard(DATA){
       svg.appendChild(tline);
       const tlabel = document.createElementNS(svg.namespaceURI,'text');
       tlabel.setAttribute('x', W-padR); tlabel.setAttribute('y', ty-6); tlabel.setAttribute('text-anchor','end'); tlabel.setAttribute('class','threshold-label');
-      tlabel.textContent = `Monte ore: ${fmt(monteOre)}h`; svg.appendChild(tlabel);
+      tlabel.textContent = `Monte ore: ${fmt(monteOre)}${unit}`; svg.appendChild(tlabel);
     }
 
     let dPath = '';
@@ -748,8 +749,8 @@ function renderDashboard(DATA){
       tooltip.style.opacity=1; tooltip.style.left = (x/W*rect.width)+'px'; tooltip.style.top = (y/H*rect.height)+'px';
       tooltip.querySelector('.t-date').textContent = pt.proj ? pt.label+' (pianificato)' : pt.label;
       tooltip.querySelector('.t-val').textContent = pt.proj
-        ? `${fmt(pt.c)}h cumulate stimate (+${fmt(pt.h)}h nel mese)`
-        : `${fmt(pt.c)}h cumulate (+${fmt(pt.h)}h quel giorno)`;
+        ? `${fmt(pt.c)}${unit} cumulate stimate (+${fmt(pt.h)}${unit} nel mese)`
+        : `${fmt(pt.c)}${unit} cumulate (+${fmt(pt.h)}${unit} quel giorno)`;
     });
     hit.addEventListener('mouseleave', ()=>{ crosshair.style.opacity=0; hoverDot.style.opacity=0; tooltip.style.opacity=0; });
   }
@@ -811,7 +812,21 @@ function renderDashboard(DATA){
     }
 
     document.getElementById('modalContent').innerHTML = html;
-    buildChart(document.getElementById('modalChartWrap'), rec.serie, rec.monte_ore, rec.pianificato_mensile);
+    let chartSerie = rec.serie, chartMonte = rec.monte_ore, chartPianif = rec.pianificato_mensile, chartUnit = 'h';
+    if(unitMode==='giorni'){
+      // Stesso tasso "effettivo" usato per Totale/Budget qui sopra: ore totali
+      // della commessa diviso i giorni-persona equivalenti (ognuno al proprio
+      // tasso). Cosi' l'estremo del grafico coincide sempre con quei valori,
+      // anche quando piu' persone con tassi diversi contribuiscono alla stessa commessa.
+      const totaleOre = rec.ore_consuntivate + (rec.pianificato||0);
+      const totaleGiorni = recGiorni(rec,'ore') + recGiorni(rec,'ore_pianificate');
+      const rate = totaleGiorni>0 ? totaleOre/totaleGiorni : 8;
+      chartSerie = rec.serie.map(p=>({ d:p.d, h:p.h/rate, c:p.c/rate }));
+      chartMonte = rec.monte_ore ? rec.monte_ore/rate : rec.monte_ore;
+      chartPianif = (rec.pianificato_mensile||[]).map(m=>({ ...m, ore:m.ore/rate }));
+      chartUnit = 'g';
+    }
+    buildChart(document.getElementById('modalChartWrap'), chartSerie, chartMonte, chartPianif, chartUnit);
     document.getElementById('modalOverlay').classList.add('open');
     document.querySelectorAll('.ore-drill').forEach(btn=>{
       const opener = btn.dataset.kind==='pianificato' ? openPianificatoDrill : openMonthlyDrill;
