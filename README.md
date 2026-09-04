@@ -8,7 +8,8 @@ https://gioconoscenti.github.io/Avanzamento_commesse/
 ## Come pubblicare un aggiornamento
 
 1. Copia i nuovi export Excel (timesheet + `Elenco_commesse.xlsx`) dentro
-   `G:\Il mio Drive\Calendari\Calendari_2026\TS`, sostituendo quelli vecchi.
+   `Avanzamento_scarichi\TS` (cartella accanto a questa), sostituendo quelli
+   vecchi.
 2. Fai doppio click su `publish.bat` in questa cartella.
 3. Inserisci la password di cifratura quando richiesta (due volte, per
    conferma). È la stessa password che useranno le persone che consultano
