@@ -24,15 +24,6 @@
       --tile-commesse:#ffffff; --tile-scarichi:#0ca30c; --tile-pianif:#3987e5; --tile-sforamento:#c98500;
     }
   }
-  :root[data-theme="dark"] .viz-root{
-    color-scheme: dark;
-    --surface-1:#1a1a19; --surface-2:#0d0d0d; --surface-3:#232322;
-    --text-primary:#ffffff; --text-secondary:#c3c2b7; --text-muted:#898781;
-    --grid:#2c2c2a; --baseline:#383835; --border:rgba(255,255,255,0.10);
-    --series-1:#3987e5; --series-1-fill:rgba(57,135,229,0.16);
-    --good:#0ca30c; --warning:#fab219; --serious:#ec835a; --critical:#e66767;
-    --tile-commesse:#ffffff; --tile-scarichi:#0ca30c; --tile-pianif:#3987e5; --tile-sforamento:#c98500;
-  }
   *{box-sizing:border-box;}
   html,body{margin:0;padding:0;}
   body{ font-family: system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--surface-2); color:var(--text-primary); }
@@ -190,7 +181,7 @@
     <button type="submit" id="pwSubmit">Sblocca</button>
   </form>
 </div>
-<div class="viz-root" id="vizRoot" data-theme="" style="display:none;">
+<div class="viz-root" id="vizRoot" style="display:none;">
 <div class="page">
 
   <div class="page-header">
@@ -201,7 +192,6 @@
     </div>
     <div class="header-actions">
       <button class="chip" id="refreshPianif">🔄 Aggiorna pianificato</button>
-      <button class="chip" id="themeToggle">🌓 Tema</button>
       <button class="btn-outline-good" id="exportCsv">Esporta CSV</button>
     </div>
   </div>
@@ -297,7 +287,6 @@
 
 <script>
 function renderDashboard(DATA){
-  const root = document.querySelector('.viz-root');
   const fmt = n => (n===null||n===undefined) ? '—' : n.toLocaleString('it-IT', {maximumFractionDigits:1});
   const fmtDate = s => { if(!s) return '—'; const d=new Date(s); return d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'}); };
   const fmtDateObj = d => d.toLocaleDateString('it-IT',{day:'2-digit',month:'2-digit',year:'numeric'});
@@ -595,11 +584,6 @@ function renderDashboard(DATA){
     document.getElementById('tabJsb').classList.remove('active');
     document.getElementById('jsbView').style.display='none';
     document.getElementById('bwvView').style.display='';
-  });
-
-  document.getElementById('themeToggle').addEventListener('click', ()=>{
-    const cur = root.getAttribute('data-theme');
-    root.setAttribute('data-theme', cur==='dark' ? 'light' : 'dark');
   });
 
   // ---------- CSV export ----------
