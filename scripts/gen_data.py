@@ -20,7 +20,10 @@ DATA_DIR = Path(__file__).resolve().parent.parent.parent / "TS"
 ELENCO_COMMESSE = DATA_DIR / "Elenco_commesse.xlsx"
 OUTPUT = Path(__file__).resolve().parent.parent / "build" / "data.plain.json"
 
-DIVISIONE_DEFAULT = "M&E"
+# Tutte le commesse tracciate sono del team M&E: la "Unita' Organizzativa" nel
+# timesheet e' la divisione della RISORSA che ha lavorato (puo' variare da riga
+# a riga, es. una persona QA che aiuta su una commessa M&E), non della commessa.
+DIVISIONE = "M&E"
 GSHEET_CSV_URL = (
     "https://docs.google.com/spreadsheets/d/e/2PACX-1vSp37Wg1X6gfecCfjHogkrAdrmMOpg5c6_r5FwhTmhCunD9gWHR7bpCKo6TtHWwsT2vcrySZ4tZucF2"
     "/pub?gid=1328021922&single=true&output=csv"
@@ -85,19 +88,7 @@ def load_timesheet():
     ts["persona_key"] = [name_key(n, c) for n, c in zip(ts["Nome Proprio"], ts["Cognome"])]
     ts["ore"] = ts["Durata"].fillna(0).astype(float)
     ts["nota"] = ts["Note"].fillna("").astype(str)
-    ts["unita"] = ts["Unità Organizzativa"].fillna("").astype(str).str.strip() if "Unità Organizzativa" in ts.columns else ""
     return ts
-
-
-def guess_divisione(code_rows):
-    """Unita organizzativa piu' frequente tra le righe timesheet della commessa
-    (ignora le righe senza valore). Fallback su DIVISIONE_DEFAULT se non c'e' dato."""
-    if "unita" not in code_rows or code_rows.empty:
-        return DIVISIONE_DEFAULT
-    valori = code_rows.loc[code_rows["unita"] != "", "unita"]
-    if valori.empty:
-        return DIVISIONE_DEFAULT
-    return valori.value_counts().idxmax()
 
 
 def load_elenco():
@@ -242,7 +233,7 @@ def main():
         rec["descrizione"] = nome_by_code.get(code, "")
         rec["stato"] = stato_by_code.get(code, "Aperta")
         rec["cliente"] = guess_cliente(code_rows)
-        rec["divisione"] = guess_divisione(code_rows)
+        rec["divisione"] = DIVISIONE
         rec["monte_ore"] = monte_ore_commessa.get(code, 0.0)
         rec["pianificato"] = 0.0
         rec["pianificato_mensile"] = []
