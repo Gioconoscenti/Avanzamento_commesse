@@ -199,6 +199,7 @@
   <div class="tabs">
     <button class="chip active" id="tabJsb">Commesse JSB</button>
     <button class="chip" id="tabBwv">Attività BWV</button>
+    <button class="chip" id="tabPersone">Persone</button>
   </div>
 
   <div id="jsbView">
@@ -265,6 +266,17 @@
         <tbody id="bwvBody"></tbody>
       </table>
     </div>
+  </div>
+
+  <div id="personeView" style="display:none;">
+    <div class="filters-card">
+      <div class="filters-row">
+        <input type="text" id="personaSearch" list="personaList" placeholder="Cerca persona…" style="flex:1;min-width:260px;">
+        <datalist id="personaList"></datalist>
+        <button class="chip" id="personaCerca">Cerca</button>
+      </div>
+    </div>
+    <div id="personaResult"></div>
   </div>
 
 </div>
@@ -570,21 +582,184 @@ function renderDashboard(DATA){
   }
   document.getElementById('bwvSearch').addEventListener('input', (e)=>{ bwvSearch = e.target.value; renderBwvTable(); });
 
+  // ---------- vista Persone: aggrega scaricato + pianificato futuro per persona, su tutte le commesse/attivita' ----------
+  let currentPersonaNome = null;
+
+  function collectPersonaNames(){
+    const names = new Set();
+    DATA.jsb.forEach(r => r.per_persona.forEach(p => names.add(p.nome)));
+    DATA.bwv.forEach(r => r.per_persona.forEach(p => names.add(p.nome)));
+    return [...names].sort((a,b)=> a.localeCompare(b,'it'));
+  }
+  function populatePersone(){
+    document.getElementById('personaList').innerHTML = collectPersonaNames().map(n=>`<option value="${n}"></option>`).join('');
+  }
+  function findPersonaMatch(query){
+    const q = normName(query);
+    if(!q) return { exact:null, candidates:[] };
+    const names = collectPersonaNames();
+    const exact = names.find(n=>normName(n)===q);
+    if(exact) return { exact, candidates:[] };
+    const candidates = names.filter(n=>normName(n).includes(q));
+    return { exact: candidates.length===1 ? candidates[0] : null, candidates };
+  }
+  function parseMeseLabel(label){
+    const mi = MONTH_LABELS_IT.indexOf(String(label).split('-')[0].toLowerCase());
+    return { anno: DATA.meta.anno_corrente, mi };
+  }
+
+  function renderPersonaView(nome){
+    currentPersonaNome = nome;
+    const resultEl = document.getElementById('personaResult');
+    const jsbRows = DATA.jsb.map(rec => ({ rec, p: rec.per_persona.find(pp=>pp.nome===nome) })).filter(x=>x.p);
+    const bwvRows = DATA.bwv.map(rec => ({ rec, p: rec.per_persona.find(pp=>pp.nome===nome) })).filter(x=>x.p);
+    if(!jsbRows.length && !bwvRows.length){
+      resultEl.innerHTML = `<div class="empty-state">Nessuna registrazione trovata per "${nome}".</div>`;
+      return;
+    }
+
+    const totOre = jsbRows.reduce((a,x)=>a+x.p.ore,0) + bwvRows.reduce((a,x)=>a+x.p.ore,0);
+    const totPianificato = jsbRows.reduce((a,x)=>a+(x.p.ore_pianificate||0),0);
+    const totMonteOre = jsbRows.reduce((a,x)=>a+(x.p.monte_ore||0),0);
+    const totale = totOre + totPianificato;
+
+    // ---- aggregazione mensile: scaricato (anno corrente, da mensile_ytd) + pianificato futuro ----
+    const ytdByMonth = {};
+    [...jsbRows, ...bwvRows].forEach(x=> (x.p.mensile_ytd||[]).forEach(m=>{
+      ytdByMonth[m.mese] = (ytdByMonth[m.mese]||0) + m.ore;
+    }));
+    const pianifByMonth = {};
+    jsbRows.forEach(x=> (x.p.pianificato_mensile||[]).forEach(m=>{
+      if(!pianifByMonth[m.mese]) pianifByMonth[m.mese] = { mese:m.mese, ore:0, anno:m.anno, mi:m.mi };
+      pianifByMonth[m.mese].ore += m.ore;
+    }));
+    const ytdEntries = Object.entries(ytdByMonth).map(([label,ore])=>({ ...parseMeseLabel(label), ore })).sort((a,b)=>a.mi-b.mi);
+    let cum = 0;
+    const serieMonthly = ytdEntries.map(e=>{
+      cum = Math.round((cum+e.ore)*100)/100;
+      return { d: new Date(e.anno, e.mi+1, 0), h: e.ore, c: cum };
+    });
+    const pianifMensileArr = Object.values(pianifByMonth).sort((a,b)=>a.mi-b.mi);
+
+    const unitLabel = unitMode==='ore' ? 'Mostra in giorni' : 'Mostra in ore';
+    let html = `<div class="detail-header" style="padding-right:0;">
+      <div><h2 style="font-size:19px;">${nome}</h2>
+        <div class="manager">${jsbRows.length} commess${jsbRows.length===1?'a':'e'} JSB · ${bwvRows.length} attività BWV</div>
+      </div>
+      <button class="chip" id="personaUnitToggle" style="font-size:11px;padding:6px 12px;">${unitLabel}</button>
+    </div>
+    <div class="detail-stats">
+      <div class="dstat"><div class="label">Scarichi totali</div><div class="value">${unitVal(totOre,nome)}</div></div>
+      <div class="dstat"><div class="label">Pianificato (${futurePeriodLabel()})</div><div class="value">${unitVal(totPianificato,nome)}</div></div>
+      <div class="dstat"><div class="label">Totale</div><div class="value">${unitVal(totale,nome)}</div></div>
+      <div class="dstat"><div class="label">Monte ore assegnato</div><div class="value">${unitVal(totMonteOre,nome)}</div></div>
+    </div>
+    <div class="chart-card"><h3>Andamento anno corrente + proiezione</h3><div class="chart-wrap" id="personaChartWrap"></div></div>`;
+
+    if(jsbRows.length){
+      html += `<div class="people-card" style="margin-bottom:16px;"><h3>Commesse JSB</h3>
+        <table class="people-table"><thead><tr><th>Commessa</th><th>Cliente</th><th>PM</th><th>Ore consuntivate</th><th>Pianificato (${futurePeriodLabel()})</th><th>Monte ore</th><th>Avanzamento</th><th>Stato</th><th></th></tr></thead><tbody>`;
+      jsbRows.forEach(({rec,p})=>{
+        const totPersona = p.ore + (p.ore_pianificate||0);
+        const ppct = p.monte_ore>0 ? (totPersona/p.monte_ore*100) : null;
+        const hasDrill = p.mensile_ytd && p.mensile_ytd.length;
+        const oreCell = hasDrill
+          ? `<button class="ore-drill" data-kind="consuntivo" data-group="jsb" data-code="${rec.code}" data-nome="${nome}">${unitVal(p.ore,nome)}</button>`
+          : unitVal(p.ore,nome);
+        const hasPianifDrill = p.pianificato_mensile && p.pianificato_mensile.length;
+        const pianifCell = !p.ore_pianificate ? '—'
+          : hasPianifDrill
+            ? `<button class="ore-drill" data-kind="pianificato" data-group="jsb" data-code="${rec.code}" data-nome="${nome}">${unitVal(p.ore_pianificate,nome)}</button>`
+            : unitVal(p.ore_pianificate,nome);
+        html += `<tr>
+          <td><strong>${rec.code}</strong><div class="unresolved-tag" style="font-style:normal;">${rec.descrizione||'—'}</div></td>
+          <td>${rec.cliente||'—'}</td>
+          <td>${rec.manager||'—'}</td>
+          <td>${oreCell}</td>
+          <td>${pianifCell}</td>
+          <td>${p.monte_ore>0? unitVal(p.monte_ore,nome):'—'}</td>
+          <td>${ppct===null?'—':fmt(ppct)+'%'}</td>
+          <td><span class="badge ${rec.stato==='Aperta'?'badge-good':'badge-neutral'}">${rec.stato}</span></td>
+          <td><button class="btn-detail" data-group="jsb" data-code="${rec.code}">Dettaglio →</button></td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+
+    if(bwvRows.length){
+      html += `<div class="people-card"><h3>Attività BWV</h3>
+        <table class="people-table"><thead><tr><th>Codice</th><th>Descrizione</th><th>Ore consuntivate</th><th></th></tr></thead><tbody>`;
+      bwvRows.forEach(({rec,p})=>{
+        const hasDrill = p.mensile_ytd && p.mensile_ytd.length;
+        const oreCell = hasDrill
+          ? `<button class="ore-drill" data-kind="consuntivo" data-group="bwv" data-code="${rec.code}" data-nome="${nome}">${unitVal(p.ore,nome)}</button>`
+          : unitVal(p.ore,nome);
+        html += `<tr>
+          <td><strong>${rec.code}</strong></td>
+          <td>${rec.descrizione||'—'}</td>
+          <td>${oreCell}</td>
+          <td><button class="btn-detail" data-group="bwv" data-code="${rec.code}">Dettaglio →</button></td>
+        </tr>`;
+      });
+      html += `</tbody></table></div>`;
+    }
+
+    resultEl.innerHTML = html;
+
+    let chartSerie = serieMonthly, chartMonte = totMonteOre || null, chartPianif = pianifMensileArr, chartUnit = 'h';
+    if(unitMode==='giorni'){
+      const rate = hoursPerDay(nome);
+      chartSerie = serieMonthly.map(pt=>({ d:pt.d, h:pt.h/rate, c:pt.c/rate }));
+      chartMonte = totMonteOre ? totMonteOre/rate : totMonteOre;
+      chartPianif = pianifMensileArr.map(m=>({ ...m, ore:m.ore/rate }));
+      chartUnit = 'g';
+    }
+    buildChart(document.getElementById('personaChartWrap'), chartSerie, chartMonte, chartPianif, chartUnit);
+
+    resultEl.querySelectorAll('.ore-drill').forEach(btn=>{
+      const opener = btn.dataset.kind==='pianificato' ? openPianificatoDrill : openMonthlyDrill;
+      btn.addEventListener('click', ()=> opener(btn.dataset.group, btn.dataset.code, btn.dataset.nome));
+    });
+    resultEl.querySelectorAll('.btn-detail').forEach(btn=>{
+      btn.addEventListener('click', ()=> openDetail(btn.dataset.group, btn.dataset.code));
+    });
+    document.getElementById('personaUnitToggle').addEventListener('click', ()=>{
+      unitMode = unitMode==='ore' ? 'giorni' : 'ore';
+      document.getElementById('modalOverlay2').classList.remove('open');
+      renderPersonaView(nome);
+    });
+  }
+
+  function doPersonaSearch(){
+    const q = document.getElementById('personaSearch').value;
+    const resultEl = document.getElementById('personaResult');
+    if(!q.trim()){ resultEl.innerHTML = ''; currentPersonaNome = null; return; }
+    const { exact, candidates } = findPersonaMatch(q);
+    if(exact){
+      renderPersonaView(exact);
+    } else if(candidates.length > 1){
+      currentPersonaNome = null;
+      resultEl.innerHTML = `<div class="empty-state">Più corrispondenze — scegli: ${candidates.map(n=>`<button class="chip" data-persona="${n}" style="margin:4px;">${n}</button>`).join('')}</div>`;
+      resultEl.querySelectorAll('[data-persona]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{ document.getElementById('personaSearch').value = btn.dataset.persona; renderPersonaView(btn.dataset.persona); });
+      });
+    } else {
+      currentPersonaNome = null;
+      resultEl.innerHTML = `<div class="empty-state">Nessuna persona trovata per "${q}".</div>`;
+    }
+  }
+  document.getElementById('personaSearch').addEventListener('input', doPersonaSearch);
+  document.getElementById('personaCerca').addEventListener('click', doPersonaSearch);
+
   // ---------- tabs ----------
-  document.getElementById('tabJsb').addEventListener('click', ()=>{
-    currentTab='jsb';
-    document.getElementById('tabJsb').classList.add('active');
-    document.getElementById('tabBwv').classList.remove('active');
-    document.getElementById('jsbView').style.display='';
-    document.getElementById('bwvView').style.display='none';
-  });
-  document.getElementById('tabBwv').addEventListener('click', ()=>{
-    currentTab='bwv';
-    document.getElementById('tabBwv').classList.add('active');
-    document.getElementById('tabJsb').classList.remove('active');
-    document.getElementById('jsbView').style.display='none';
-    document.getElementById('bwvView').style.display='';
-  });
+  const TABS = { jsb: 'tabJsb', bwv: 'tabBwv', persone: 'tabPersone' };
+  const TAB_VIEWS = { jsb: 'jsbView', bwv: 'bwvView', persone: 'personeView' };
+  function switchTab(tab){
+    currentTab = tab;
+    Object.entries(TABS).forEach(([t,id])=> document.getElementById(id).classList.toggle('active', t===tab));
+    Object.entries(TAB_VIEWS).forEach(([t,id])=> document.getElementById(id).style.display = (t===tab) ? '' : 'none');
+  }
+  Object.entries(TABS).forEach(([t,id])=> document.getElementById(id).addEventListener('click', ()=> switchTab(t)));
 
   // ---------- CSV export ----------
   function csvEscape(v){ const s=String(v??''); return /[",\n;]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; }
@@ -894,12 +1069,14 @@ function renderDashboard(DATA){
     await fetchLivePianificato();
     renderStats();
     renderJsbTable();
+    if(currentPersonaNome) renderPersonaView(currentPersonaNome);
     document.getElementById('refreshPianif').disabled = false;
   }
   document.getElementById('refreshPianif').addEventListener('click', refreshPianifAndRerender);
 
   // ---------- init ----------
   populateFilters();
+  populatePersone();
   document.getElementById('pianifStatus').textContent = `Pianificato: istantanea del ${DATA.meta.generato_il} (tentativo di aggiornamento dal gsheet in corso…)`;
   renderStats();
   renderJsbTable();
