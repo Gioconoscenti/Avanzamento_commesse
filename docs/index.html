@@ -153,6 +153,14 @@
   .unresolved-tag{ font-size:10px; color:var(--text-muted); font-style:italic; }
   .empty-state{ color:var(--text-muted); font-size:13px; padding:30px 0; text-align:center; }
   .pianif-pending{ font-size:11px; color:var(--text-muted); font-style:italic; }
+  .ratio-list{ display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; max-height:180px; overflow-y:auto; }
+  .ratio-list label.toggle-chip{ padding:6px 10px; }
+  .ratio-list label.toggle-chip.checked{ border-color:var(--series-1); background:var(--series-1-fill); }
+  .ratio-share{ display:flex; align-items:center; gap:8px; min-width:160px; }
+  .ratio-share-track{ flex:1; height:7px; border-radius:4px; background:var(--tile-sforamento); overflow:hidden; }
+  .ratio-share-fill{ height:100%; background:var(--series-1); }
+  tr.ratio-avg td{ font-weight:700; background:var(--surface-3); border-top:2px solid var(--border); }
+  .ratio-note{ font-size:11.5px; color:var(--text-muted); margin-top:8px; }
 
   ::-webkit-scrollbar{ width:10px; height:10px; }
   ::-webkit-scrollbar-thumb{ background:var(--border); border-radius:5px; }
@@ -200,6 +208,7 @@
     <button class="chip active" id="tabJsb">Commesse JSB</button>
     <button class="chip" id="tabBwv">Attività BWV</button>
     <button class="chip" id="tabPersone">Persone</button>
+    <button class="chip" id="tabRatio">JSB vs BWV</button>
   </div>
 
   <div id="jsbView">
@@ -277,6 +286,36 @@
       </div>
     </div>
     <div id="personaResult"></div>
+  </div>
+
+  <div id="ratioView" style="display:none;">
+    <div class="stat-grid" id="ratioStats"></div>
+    <div class="filters-card">
+      <div class="filters-row">
+        <input type="text" id="ratioSearch" placeholder="Filtra elenco risorse…">
+        <select id="ratioPeriodo">
+          <option value="tutto">Periodo: tutto lo storico</option>
+          <option value="ytd">Periodo: anno corrente</option>
+        </select>
+        <button class="chip" id="ratioSelAll">Seleziona visibili</button>
+        <button class="chip" id="ratioSelNone">Deseleziona tutte</button>
+      </div>
+      <div class="ratio-list" id="ratioList"></div>
+      <div class="ratio-note" id="ratioNote"></div>
+    </div>
+    <div class="table-wrap">
+      <table class="grid" id="ratioTable" style="min-width:760px;">
+        <thead><tr>
+          <th data-key="nome">Risorsa</th>
+          <th data-key="jsb" style="text-align:right;">Giorni JSB</th>
+          <th data-key="bwv" style="text-align:right;">Giorni BWV</th>
+          <th data-key="tot" style="text-align:right;">Totale giorni</th>
+          <th data-key="ratio" style="text-align:right;">Rapporto JSB/BWV</th>
+          <th data-key="share">Quota JSB</th>
+        </tr></thead>
+        <tbody id="ratioBody"></tbody>
+      </table>
+    </div>
   </div>
 
 </div>
@@ -751,9 +790,114 @@ function renderDashboard(DATA){
   document.getElementById('personaSearch').addEventListener('input', doPersonaSearch);
   document.getElementById('personaCerca').addEventListener('click', doPersonaSearch);
 
+  // ---------- vista JSB vs BWV: giorni scaricati per risorsa sui due gruppi e rapporto ----------
+  // Solo consuntivi (niente pianificato): il gsheet copre solo le commesse JSB e falserebbe il rapporto.
+  // Giorni = ore / hoursPerDay(nome), come nel toggle giorni/ore delle altre viste.
+  const ratioSelected = new Set();
+  let ratioSearch = '', ratioPeriodo = 'tutto', ratioSortKey = 'nome', ratioSortDir = 1;
+
+  function personaOre(p){
+    return ratioPeriodo==='ytd' ? (p.mensile_ytd||[]).reduce((a,m)=>a+m.ore,0) : p.ore;
+  }
+  function buildRatioRows(){
+    const byNome = {};
+    const add = (group, recs) => recs.forEach(rec => rec.per_persona.forEach(p=>{
+      const r = byNome[p.nome] || (byNome[p.nome] = { nome:p.nome, jsb:0, bwv:0 });
+      r[group] += personaOre(p) / hoursPerDay(p.nome);
+    }));
+    add('jsb', DATA.jsb);
+    add('bwv', DATA.bwv);
+    return Object.values(byNome)
+      .filter(r => r.jsb>0 || r.bwv>0)
+      .map(r => withRatio(r));
+  }
+  function withRatio(r){
+    const tot = r.jsb + r.bwv;
+    return { ...r, tot, ratio: r.bwv>0 ? r.jsb/r.bwv : null, share: tot>0 ? r.jsb/tot*100 : null };
+  }
+  const fmtRatio = r => r.ratio!==null ? fmt(Math.round(r.ratio*100)/100) : (r.jsb>0 ? 'solo JSB' : '—');
+  function shareCell(r){
+    if(r.share===null) return '—';
+    return `<div class="ratio-share"><div class="ratio-share-track"><div class="ratio-share-fill" style="width:${r.share}%;"></div></div><div class="avanz-pct">${fmt(r.share)}%</div></div>`;
+  }
+
+  function renderRatioView(){
+    const all = buildRatioRows().sort((a,b)=> a.nome.localeCompare(b.nome,'it'));
+    const q = normName(ratioSearch);
+    const listed = all.filter(r => !q || normName(r.nome).includes(q));
+    const listEl = document.getElementById('ratioList');
+    listEl.innerHTML = listed.length ? listed.map(r=>{
+      const on = ratioSelected.has(r.nome);
+      return `<label class="toggle-chip${on?' checked':''}"><input type="checkbox" data-nome="${r.nome}"${on?' checked':''}> ${r.nome}</label>`;
+    }).join('') : '<span class="pianif-pending">Nessuna risorsa corrisponde.</span>';
+    listEl.querySelectorAll('input[type=checkbox]').forEach(cb=>{
+      cb.addEventListener('change', ()=>{
+        if(cb.checked) ratioSelected.add(cb.dataset.nome); else ratioSelected.delete(cb.dataset.nome);
+        renderRatioView();
+      });
+    });
+
+    // nessuna selezione = tutte le risorse
+    const rows = ratioSelected.size ? all.filter(r=>ratioSelected.has(r.nome)) : all;
+    const n = rows.length;
+    const avg = withRatio({
+      nome: `Media (${n} risors${n===1?'a':'e'})`,
+      jsb: n ? rows.reduce((a,r)=>a+r.jsb,0)/n : 0,
+      bwv: n ? rows.reduce((a,r)=>a+r.bwv,0)/n : 0,
+    });
+
+    const periodoLbl = ratioPeriodo==='ytd' ? 'nel '+DATA.meta.anno_corrente : 'tutto lo storico';
+    const scope = ratioSelected.size===0 ? 'tutte le risorse' : n===1 ? rows[0].nome : `media di ${n} risorse`;
+    const tiles = n===1 ? rows[0] : avg;
+    const tilesDef = [
+      ['pianif','GIORNI JSB', fmt(tiles.jsb), scope+' · '+periodoLbl],
+      ['sforamento','GIORNI BWV', fmt(tiles.bwv), scope+' · '+periodoLbl],
+      ['commesse','RAPPORTO JSB/BWV', fmtRatio(tiles), 'giorni JSB per ogni giorno BWV'],
+      ['scarichi','QUOTA JSB', tiles.share===null?'—':fmt(tiles.share)+'%', 'sul totale giorni scaricati'],
+    ];
+    document.getElementById('ratioStats').innerHTML = tilesDef.map(([cls,l,v,f])=>
+      `<div class="stat-card" style="--accent:var(--tile-${cls});"><div class="label">${l}</div><div class="value">${v}</div><div class="foot">${f}</div></div>`
+    ).join('');
+    document.getElementById('ratioNote').textContent =
+      (ratioSelected.size ? `${ratioSelected.size} selezionat${ratioSelected.size===1?'a':'e'}. ` : 'Nessuna selezione: sono mostrate tutte le risorse. ')
+      + 'La media è per risorsa; il rapporto medio è calcolato sulle medie (giorni JSB medi / giorni BWV medi). Solo consuntivi approvati, fino al mese precedente.';
+
+    const sorted = rows.slice().sort((a,b)=>{
+      const va = a[ratioSortKey], vb = b[ratioSortKey];
+      if(ratioSortKey==='nome') return va.localeCompare(vb,'it')*ratioSortDir;
+      return ((va===null?Infinity:va) - (vb===null?Infinity:vb))*ratioSortDir;
+    });
+    const rowHtml = (r, cls) => `<tr${cls?` class="${cls}"`:''}>
+      <td>${r.nome}</td>
+      <td class="num">${fmt(r.jsb)}</td>
+      <td class="num">${fmt(r.bwv)}</td>
+      <td class="num">${fmt(r.tot)}</td>
+      <td class="num">${fmtRatio(r)}</td>
+      <td>${shareCell(r)}</td>
+    </tr>`;
+    document.getElementById('ratioBody').innerHTML = n
+      ? sorted.map(r=>rowHtml(r)).join('') + (n>1 ? rowHtml(avg,'ratio-avg') : '')
+      : '<tr class="empty-row"><td colspan="6">Nessuna risorsa con giorni scaricati nel periodo.</td></tr>';
+  }
+
+  document.querySelectorAll('#ratioTable thead th[data-key]').forEach(th=>{
+    th.addEventListener('click', ()=>{
+      const key = th.dataset.key;
+      ratioSortDir = (ratioSortKey===key) ? -ratioSortDir : (key==='nome' ? 1 : -1); ratioSortKey = key;
+      renderRatioView();
+    });
+  });
+  document.getElementById('ratioSearch').addEventListener('input', e=>{ ratioSearch = e.target.value; renderRatioView(); });
+  document.getElementById('ratioPeriodo').addEventListener('change', e=>{ ratioPeriodo = e.target.value; renderRatioView(); });
+  document.getElementById('ratioSelAll').addEventListener('click', ()=>{
+    document.querySelectorAll('#ratioList input[type=checkbox]').forEach(cb=> ratioSelected.add(cb.dataset.nome));
+    renderRatioView();
+  });
+  document.getElementById('ratioSelNone').addEventListener('click', ()=>{ ratioSelected.clear(); renderRatioView(); });
+
   // ---------- tabs ----------
-  const TABS = { jsb: 'tabJsb', bwv: 'tabBwv', persone: 'tabPersone' };
-  const TAB_VIEWS = { jsb: 'jsbView', bwv: 'bwvView', persone: 'personeView' };
+  const TABS = { jsb: 'tabJsb', bwv: 'tabBwv', persone: 'tabPersone', ratio: 'tabRatio' };
+  const TAB_VIEWS = { jsb: 'jsbView', bwv: 'bwvView', persone: 'personeView', ratio: 'ratioView' };
   function switchTab(tab){
     currentTab = tab;
     Object.entries(TABS).forEach(([t,id])=> document.getElementById(id).classList.toggle('active', t===tab));
@@ -1081,6 +1225,7 @@ function renderDashboard(DATA){
   renderStats();
   renderJsbTable();
   renderBwvTable();
+  renderRatioView();
   refreshPianifAndRerender();
 }
 </script>
