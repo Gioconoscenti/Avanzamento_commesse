@@ -65,7 +65,8 @@ def extract_code(progetto):
 
 
 def load_timesheet():
-    files = [f for f in DATA_DIR.glob("*.xlsx") if f.name != ELENCO_COMMESSE.name]
+    # "~$..." sono i file di lock creati da Excel quando un export e' aperto: non leggibili.
+    files = [f for f in DATA_DIR.glob("*.xlsx") if f.name != ELENCO_COMMESSE.name and not f.name.startswith("~$")]
     if not files:
         raise SystemExit(f"Nessun file timesheet trovato in {DATA_DIR}")
     frames = [pd.read_excel(f, sheet_name=0) for f in files]
@@ -159,9 +160,13 @@ def build_commessa_record(code, code_rows, anno_corrente, meta_extra=None):
     per_persona_real = {}
     for key, grp in code_rows.groupby("persona_key"):
         ore = round(float(grp["ore"].sum()), 2)
+        # Ore per anno solare (chiavi stringa per il JSON): usate dal cruscotto JSB vs BWV
+        # per filtrare per anno, dato che mensile_ytd copre solo l'anno corrente.
+        ore_anno = grp.groupby(grp["data_dt"].dt.year)["ore"].sum()
         per_persona_real[key] = {
             "nome": grp["persona_nome"].iloc[0],
             "ore": ore,
+            "ore_anno": {str(int(y)): round(float(h), 2) for y, h in ore_anno.items()},
             "mensile_ytd": build_mensile_ytd(grp, anno_corrente),
         }
     n_risorse_reali = sum(1 for p in per_persona_real.values() if p["ore"] > 0)
@@ -253,6 +258,7 @@ def main():
                 merged[key] = {
                     "nome": known_persons.get(key, assign["risorsa_nome"]),
                     "ore": 0.0,
+                    "ore_anno": {},
                     "mensile_ytd": [],
                     "monte_ore": assign["monte_ore"],
                     "pianificato": True,

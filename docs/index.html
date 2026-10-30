@@ -293,10 +293,7 @@
     <div class="filters-card">
       <div class="filters-row">
         <input type="text" id="ratioSearch" placeholder="Filtra elenco risorse…">
-        <select id="ratioPeriodo">
-          <option value="tutto">Periodo: tutto lo storico</option>
-          <option value="ytd">Periodo: anno corrente</option>
-        </select>
+        <select id="ratioPeriodo"></select>
         <button class="chip" id="ratioSelAll">Seleziona visibili</button>
         <button class="chip" id="ratioSelNone">Deseleziona tutte</button>
       </div>
@@ -796,8 +793,18 @@ function renderDashboard(DATA){
   const ratioSelected = new Set();
   let ratioSearch = '', ratioPeriodo = 'tutto', ratioSortKey = 'nome', ratioSortDir = 1;
 
+  // ratioPeriodo: 'tutto' oppure un anno ('2026'). ore_anno manca nei dati generati prima della
+  // sua introduzione: in quel caso l'anno corrente si ricava da mensile_ytd.
   function personaOre(p){
-    return ratioPeriodo==='ytd' ? (p.mensile_ytd||[]).reduce((a,m)=>a+m.ore,0) : p.ore;
+    if(ratioPeriodo==='tutto') return p.ore;
+    if(p.ore_anno) return p.ore_anno[ratioPeriodo] || 0;
+    return ratioPeriodo===String(DATA.meta.anno_corrente) ? (p.mensile_ytd||[]).reduce((a,m)=>a+m.ore,0) : 0;
+  }
+  function populateRatioAnni(){
+    const anni = new Set([String(DATA.meta.anno_corrente)]);
+    [...DATA.jsb, ...DATA.bwv].forEach(rec => rec.per_persona.forEach(p => Object.keys(p.ore_anno||{}).forEach(y => anni.add(y))));
+    document.getElementById('ratioPeriodo').innerHTML = '<option value="tutto">Anno: tutti</option>'
+      + [...anni].sort().reverse().map(y => `<option value="${y}">Anno: ${y}</option>`).join('');
   }
   function buildRatioRows(){
     const byNome = {};
@@ -846,7 +853,7 @@ function renderDashboard(DATA){
       bwv: n ? rows.reduce((a,r)=>a+r.bwv,0)/n : 0,
     });
 
-    const periodoLbl = ratioPeriodo==='ytd' ? 'nel '+DATA.meta.anno_corrente : 'tutto lo storico';
+    const periodoLbl = ratioPeriodo==='tutto' ? 'tutti gli anni' : 'anno '+ratioPeriodo;
     const scope = ratioSelected.size===0 ? 'tutte le risorse' : n===1 ? rows[0].nome : `media di ${n} risorse`;
     const tiles = n===1 ? rows[0] : avg;
     const tilesDef = [
@@ -1225,6 +1232,7 @@ function renderDashboard(DATA){
   renderStats();
   renderJsbTable();
   renderBwvTable();
+  populateRatioAnni();
   renderRatioView();
   refreshPianifAndRerender();
 }
